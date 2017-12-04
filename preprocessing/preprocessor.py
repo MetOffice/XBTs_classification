@@ -33,14 +33,10 @@ def main():
 					  args.train_split, 
 					  args.test_split)
     
-    data.load_data()
+    data_preprocessor.load_data()
     
-    data.remove_useless_features()
-    
-    data.categorical_features_to_label()
+    data_preprocessor.remove_useless_features()
 
-    data.categorical_features_to_dummy()
+    data_preprocessor.split_to_train_test()
 
-    data.split_to_train_test()
-
-    data.print_new_datasets_to_csv(ars.outpath,int(args.startyear),int(args.endyear))
+    data_preprocessor.print_new_datasets_to_csv(args.outpath,int(args.startyear),int(args.endyear))
