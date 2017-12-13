@@ -1,6 +1,7 @@
 import numpy 
 import pandas 
-from sklearn import preprocessing
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder
 
 class DataPreprocessor(object):
 
@@ -11,76 +12,100 @@ class DataPreprocessor(object):
         if not isinstance(element,element_type):
             raise ValueError("element must be a ",element_type," object.")
 
-    def __init__(self, train_dataset_name, test_dataset_name, useless_features, features_to_get_labeled, features_to_get_dummy, reshuffle=True, train_split=.75, test_split=.25):
+    def __init__(self, train_dataset_name, test_dataset_name, useless_features=[], features_to_get_labeled=[], features_to_get_dummy=[],features_to_rescale=[], reshuffle=True, train_split=.75, test_split=.25):
         self.train_dataset_name = train_dataset_name
         self.test_dataset_name = test_dataset_name
         self.useless_features = useless_features
         self.features_to_get_labeled = features_to_get_labeled
         self.features_to_get_dummy = features_to_get_dummy
+        self.features_to_rescale = features_to_rescale
         self.reshuffle = reshuffle
         self.train_split = train_split
         self.test_split = test_split
 
         # basic initialization checks
-        list_of_checks = [str,str,list,list,list,bool,float,float]
-        list_of_elements = [self.train_dataset_name, self.test_dataset_name, self.useless_features, self.features_to_get_labeled, self.features_to_get_dummy, self.reshuffle, self.train_split, self.test_split]
+        list_of_checks = [str,str,list,list,list,list,bool,float,float]
+        list_of_elements = [self.train_dataset_name, self.test_dataset_name, self.useless_features, self.features_to_get_labeled, self.features_to_get_dummy, self.features_to_rescale, self.reshuffle, self.train_split, self.test_split]
 
         for element, element_check_type in zip(list_of_elements,list_of_checks):
             self.sanity_check(element,element_check_type)
 
-    def load_data(self):
-        """load train and test dataset, concatenate them into a large dataset, convert date from float to string"""
+    def load_data(self,stack = False):
+        """load and then return train and test dataset: if flag stack enabled, then concatenate them into a large dataset and return it"""
             
         train_dataset = pandas.read_csv(self.train_dataset_name)
         test_dataset = pandas.read_csv(self.test_dataset_name)
-        self.data = pandas.concat([train_dataset,test_dataset])
-
-    def recode_column_values(self,column,start,end):
-        """ convert column values into string type, keep only characters within the interval defined by start and end """
         
-        self.data[column]=self.data[column].astype(str)
-        self.data[column]=self.data[column].str.slice(start,end)
+        if stack:        
+            return pandas.concat([train_dataset,test_dataset])
+        else:
+            return train_dataset, test_dataset
 
-    def remove_useless_features(self):
+    @staticmethod        
+    def recode_column_values(dataframe,column,start,end):
+        """convert column values into string type, keep only characters within the interval defined by start and end """
+        
+        dataframe[column]=dataframe[column].astype(str)
+        dataframe[column]=dataframe[column].str.slice(start,end)
+
+    def remove_useless_features(self,dataframe):
         """removes features not used for the classification procedure"""
 
-        self.data=self.data.drop(self.useless_features,axis=1)
+        dataframe.drop(columns=self.useless_features,inplace=True)
 
-    def categorical_features_to_label(self):
+    def categorical_features_to_label(self,dataframe):
         """convert categorical features to ordinal integers, by applying a univoque mapping"""
 
-        encoder = preprocessing.LabelEncoder()
+        encoder = LabelEncoder()
         for key in self.features_to_get_labeled:
-            encoder.fit(self.data[key])
-            transformed=encoder.transform(self.data[key])
-            self.data[key].iloc[:]=transformed
+            encoder.fit(dataframe[key])
+            transformed=encoder.transform(dataframe[key])
+            dataframe[key].iloc[:]=transformed
 
-    def categorical_features_to_dummy(self):
+    def categorical_features_to_dummy(self,dataframe):
         """convert categorical features to dummy variables"""
 
-        converted = pandas.get_dummies(self.data[self.features_to_get_dummy])
-        self.data=self.data.drop(self.features_to_get_dummy,axis=1)
-        self.data = pandas.concat([self.data,converted],axis='columns')
+        converted = pandas.get_dummies(dataframe[self.features_to_get_dummy])
+        dataframe.drop(self.features_to_get_dummy,axis=1,inplace = True)
+        for key in converted.columns:
+            dataframe[key] =  converted[key]
+            
+    def features_to_rescale(self, dataframe_1, dataframe_2, as_frame = True):
+        """Rescale input features by removing the mean and normalizing with respect the variance"""
+    
+        rescaler = StandardScaler()
+        X_1 = rescaler.fit_transform(dataframe_1.as_matrix)
+        X_2 = rescaler.transform(dataframe_2.as_matrix)
         
-    def split_to_train_test(self): 
-        """split large dataset, into new train and test set, with train/test size determined by train_split/test_split attributes. Apply reshuffling if reshuffle=True"""
+        if as_frame:
+            new_train_frame = pandas.DataFrame(X_1,columns = dataframe_1.columns)
+            new_test_frame = pandas.DataFrame(X_2,columns = dataframe_2.columns)
+            return new_train_frame,new_test_frame
+        else:
+            return X_1,X_2
+        
+    def split_to_train_test(self,dataframe): 
+        """split large dataset, into new train and test set, with train/test size determined by train_split/test_split attributes. Apply reshuffling if reshuffle flag enabled"""
 
-        self.data = self.data.reset_index()
+        dataframe.reset_index(inplace=True,drop=True)
         
         if self.reshuffle:
-            self.data = self.data.reindex(numpy.random.permutation(self.data.index))
+            dataframe = dataframe.reindex(numpy.random.permutation(dataframe.index))
       
-        size=self.data.shape[0]
+        size=dataframe.shape[0]
         size_new_train = int(size*self.train_split)
-        self.new_train = self.data.iloc[0:size_new_train,:]
-        self.new_test = self.data.iloc[size_new_train:,:]
+        new_train_dataset = dataframe.iloc[0:size_new_train,:]
+        new_test_dataset = dataframe.iloc[size_new_train:,:]
+        
+        return new_train_dataset,new_test_dataset
 
-    def print_new_datasets_to_csv(self,outpath,startyear,endyear):
+    def print_new_datasets_to_csv(self,new_train_dataset,new_test_dataset,outpath,startyear,endyear):
         """extract a single dataset from new train and test dataset, by matching a specific year value. Saves the datasets to csv files. Repeat the operation by looping over a range of years"""
 
         for year in range(startyear,endyear+1):
-            train_year = self.new_train[self.new_train['date']==str(year)]
-            test_year = self.new_test[self.new_test['date']==str(year)]
+            train_year = new_train_dataset[self.new_train['date']==str(year)]
+            test_year = new_test_dataset[self.new_test['date']==str(year)]
             for name,data_frame in zip(['train_'+str(year)+'.csv','test_'+str(year)+'.csv'],[train_year,test_year]):
                 out_file_name = outpath+name
                 data_frame.to_csv(out_file_name,index=False)
+# Still to do: numerical filling of nan, numerical filling of categorical, creation of new features
