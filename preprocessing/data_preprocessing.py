@@ -52,7 +52,7 @@ class DataPreprocessor(object):
     def remove_useless_features(self,dataframe):
         """removes features not used for the classification procedure"""
 
-        dataframe.drop(columns=self.useless_features,inplace=True)
+        dataframe.drop(labels=self.useless_features,axis=1,inplace=True)
 
     def categorical_features_to_label(self,dataframe):
         """convert categorical features to ordinal integers, by applying a univoque mapping"""
@@ -71,10 +71,10 @@ class DataPreprocessor(object):
         for key in converted.columns:
             dataframe[key] =  converted[key]
             
-    def impute_numerical_nans(self,dataframe_1, dataframe_2, as_frame = True):
+    def impute_numerical_nans(self,dataframe_1, dataframe_2, strategy, axis, missing_values = 'Nan', as_frame = True):
         """Fill Nans in numerical input features"""
         
-        imputer = Imputer()
+        imputer = Imputer(missing_values=missing_values, strategy=strategy, axis=axis, verbose=0, copy=False)
         X_1, X_2 = dataframe_1.values, dataframe_2.values
         imputer.fit_transform(X_1)
         imputer.transform(X_2)
@@ -96,9 +96,7 @@ class DataPreprocessor(object):
         rescaler.transform(X_2)
         
         if as_frame:
-            new_train_frame = pandas.DataFrame(X_1,columns = dataframe_1.columns)
-            new_test_frame = pandas.DataFrame(X_2,columns = dataframe_2.columns)
-            return new_train_frame,new_test_frame
+            return dataframe_1, dataframe_2
         else:
             return X_1,X_2
         

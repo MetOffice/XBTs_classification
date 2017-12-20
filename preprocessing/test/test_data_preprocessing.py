@@ -38,7 +38,7 @@ class TestDataPreprocessor(unittest.TestCase):
         
         self.test_train_frame = pandas.DataFrame(self.train_dictionary)
         self.test_test_frame = pandas.DataFrame(self.test_dictionary)
-          
+
         self.test_train_frame.to_csv(self.train_file_name,index=False)
         self.test_test_frame.to_csv(self.test_file_name,index=False)
         
@@ -125,14 +125,19 @@ class TestDataPreprocessor(unittest.TestCase):
         for index,key in enumerate(new_labels):
             numpy.testing.assert_array_equal(count_arrays[index],self.test_train_frame[key].values,err_msg='Testing correct conversion to dummies')
             
-        self.test_train_frame.drop(columns=new_labels,inplace = True)
+        self.test_train_frame.drop(labels=new_labels,axis=1,inplace = True)
         
-    def test_rescale_features(self):
-        """test features rescaling"""
-        test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name,features_to_rescale=['one'])        
-        new_train_array, new_test_array = test_preprocessor.rescale_features(self.test_train_frame,self.test_test_frame, as_frame=False)
-        print(new_train_array, new_test_array)
+    def test_impute_numerical_nans(self):
+        """test nan values imputing"""
+        test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name)
+        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = True)
         
+        train_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,2.]])
+        test_expected = numpy.array([[1.,1.],[2.,2.],[2.5,3.],[4.,4.]])
+        numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train frame')
+        numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test frame')
+
+        #train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=1, missing_values = 'NaN',as_frame = True)
         
     def test_split_to_train_test(self):
         """test correct train/test splitting"""
