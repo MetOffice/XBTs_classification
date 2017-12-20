@@ -3,6 +3,7 @@ import os
 import pandas 
 import unittest
 from ..data_preprocessing import DataPreprocessor
+pandas.options.mode.chained_assignment = None
 
 class TestDataPreprocessor(unittest.TestCase):
     def setUp(self):
@@ -130,15 +131,52 @@ class TestDataPreprocessor(unittest.TestCase):
     def test_impute_numerical_nans(self):
         """test nan values imputing"""
         test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name)
-        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = True)
-        
+
+        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = False)        
         train_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,2.]])
         test_expected = numpy.array([[1.,1.],[2.,2.],[2.5,3.],[4.,4.]])
-        numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train frame')
-        numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test frame')
+        numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train array: using mean')
+        numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test array: using mean')
 
-        #train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=1, missing_values = 'NaN',as_frame = True)
+        train_frame, test_frame = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = True)        
+        pandas.testing.assert_frame_equal(train_frame,pandas.DataFrame(train_expected,columns=self.test_train_frame.columns))
+        pandas.testing.assert_frame_equal(test_frame,pandas.DataFrame(test_expected,columns=self.test_test_frame.columns))
+
+
+        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='median', axis=0, missing_values = 'NaN',as_frame = False)        
+        train_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,2.]])
+        test_expected = numpy.array([[1.,1.],[2.,2.],[2.5,3.],[4.,4.]])
+        numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train array: using median')
+        numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test array: using median')
+
+        train_frame, test_frame = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = True)        
+        pandas.testing.assert_frame_equal(train_frame,pandas.DataFrame(train_expected,columns=self.test_train_frame.columns))
+        pandas.testing.assert_frame_equal(test_frame,pandas.DataFrame(test_expected,columns=self.test_test_frame.columns))
+
+
+        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=1, missing_values = 'NaN',as_frame = False)        
+        train_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,4.]])
+        test_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,4.]])
+        numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train array: using mean')
+        numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test array: using mean')
+
+        train_frame, test_frame = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=1, missing_values = 'NaN',as_frame = True)        
+        pandas.testing.assert_frame_equal(train_frame,pandas.DataFrame(train_expected,columns=self.test_train_frame.columns))
+        pandas.testing.assert_frame_equal(test_frame,pandas.DataFrame(test_expected,columns=self.test_test_frame.columns))
+    
+    def test_rescale_features(self):
+        """test features rescaling"""
+        test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name,features_to_rescale=['babo'])
         
+        train_frame = pandas.DataFrame(numpy.array([[1.,2.],[1.,2.],[.1,.3],[4.,.2]]) ,columns=['babo','bibo'])
+        test_frame = pandas.DataFrame(numpy.array([[5.,2.],[1.,2.],[1.,.3],[4.,.2]]),columns=['babo','bibo'])
+        
+        train_array, test_array = test_preprocessor.rescale_features(train_frame, test_frame, as_frame = False)
+        train_expected = numpy.array([[-0.35583   ,  0.99918467],[-0.35583   ,  0.99918467],[-0.96582428, -0.9420884 ],[ 1.67748427, -1.05628094]])
+        test_expected = numpy.array([[ 2.3552557 ,  0.99918467],[-0.35583   ,  0.99918467],[-0.35583   , -0.9420884 ],[ 1.67748427, -1.05628094]])
+        numpy.testing.assert_array_almost_equal(train_array,train_expected,err_msg='Testing correct rescaling procedure of train array')
+        numpy.testing.assert_array_almost_equal(test_array,test_expected,err_msg='Testing correct rescaling procedure of test array')
+    
     def test_split_to_train_test(self):
         """test correct train/test splitting"""
         
