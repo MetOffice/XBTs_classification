@@ -1,7 +1,8 @@
 import numpy 
 import pandas 
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import Imputer
 from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
 
 class DataPreprocessor(object):
 
@@ -70,12 +71,29 @@ class DataPreprocessor(object):
         for key in converted.columns:
             dataframe[key] =  converted[key]
             
-    def features_to_rescale(self, dataframe_1, dataframe_2, as_frame = True):
+    def impute_numerical_nans(self,dataframe_1, dataframe_2, as_frame = True):
+        """Fill Nans in numerical input features"""
+        
+        imputer = Imputer()
+        X_1, X_2 = dataframe_1.values, dataframe_2.values
+        imputer.fit_transform(X_1)
+        imputer.transform(X_2)
+        
+        if as_frame:
+            new_train_frame = pandas.DataFrame(X_1,columns = dataframe_1.columns)
+            new_test_frame = pandas.DataFrame(X_2,columns = dataframe_2.columns)
+            return new_train_frame,new_test_frame
+        else:
+            return X_1,X_2
+
+            
+    def rescale_features(self, dataframe_1, dataframe_2, as_frame = True):
         """Rescale input features by removing the mean and normalizing with respect the variance"""
     
         rescaler = StandardScaler()
-        X_1 = rescaler.fit_transform(dataframe_1.as_matrix)
-        X_2 = rescaler.transform(dataframe_2.as_matrix)
+        X_1, X_2 = dataframe_1.values, dataframe_2.values
+        rescaler.fit_transform(X_1)
+        rescaler.transform(X_2)
         
         if as_frame:
             new_train_frame = pandas.DataFrame(X_1,columns = dataframe_1.columns)

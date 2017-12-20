@@ -16,18 +16,10 @@ import time
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import StandardScaler
 
 RELEVANT_FEATURES = ['lat','lon','max_depth']
 TARGET = 'instrument'
 
-def rescale(X_train,X_test):
-    """Rescale input features by removing the mean and normalizing with respect the variance"""
-    
-    rescaler = StandardScaler()
-    X_train = rescaler.fit_transform(X_train)
-    X_test = rescaler.transform(X_test)
-    return X_train,X_test
     
 def optimize(X_train,y,max_nneighbors,n_folds):
     """Apply k-fold cross-validation to tune the optimal number of neighbors"""
@@ -70,17 +62,6 @@ def plot_output(optimal_nneighbors, scores, times, data_to_plot, max_nneighbors,
     plt.close(fig)
     
     fig.savefig(plot_dir+"/K-fold_cross_validation"+year+".pdf")
-
-    fig = plt.figure()
-    plt.plot(nneighbors,times, ':')
-    plt.legend()
-    plt.xlabel('N neighbors')
-    plt.ylabel('training time')
-    plt.title('training times ')
-    plt.axis('tight')
-    plt.close(fig)
-    
-    fig.savefig(plot_dir+"/K-fold_training_times"+year+".pdf")
 
 def classify(train_name,test_name,year,log_tuning):
     """Run classification for a single year"""

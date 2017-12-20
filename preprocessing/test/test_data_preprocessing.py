@@ -115,7 +115,6 @@ class TestDataPreprocessor(unittest.TestCase):
         """test conversion of categorical features to dummy"""
 
         test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name,features_to_get_dummy=['car'])
-        test_preprocessor.features_to_get_dummy = ['car']
         
         self.test_train_frame['car']=pandas.Series(['a','a','b','c'])
         test_preprocessor.categorical_features_to_dummy(self.test_train_frame)
@@ -127,6 +126,13 @@ class TestDataPreprocessor(unittest.TestCase):
             numpy.testing.assert_array_equal(count_arrays[index],self.test_train_frame[key].values,err_msg='Testing correct conversion to dummies')
             
         self.test_train_frame.drop(columns=new_labels,inplace = True)
+        
+    def test_rescale_features(self):
+        """test features rescaling"""
+        test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name,features_to_rescale=['one'])        
+        new_train_array, new_test_array = test_preprocessor.rescale_features(self.test_train_frame,self.test_test_frame, as_frame=False)
+        print(new_train_array, new_test_array)
+        
         
     def test_split_to_train_test(self):
         """test correct train/test splitting"""
