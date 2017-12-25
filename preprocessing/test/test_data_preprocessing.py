@@ -132,38 +132,50 @@ class TestDataPreprocessor(unittest.TestCase):
         """test nan values imputing"""
         test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name)
 
-        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = False)        
+        # return arrays, imputing over row index
+        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, columns = ['one','two'], strategy='mean', axis=0,as_frame = False)        
         train_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,2.]])
         test_expected = numpy.array([[1.,1.],[2.,2.],[2.5,3.],[4.,4.]])
         numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train array: using mean')
         numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test array: using mean')
 
-        train_frame, test_frame = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = True)        
-        pandas.testing.assert_frame_equal(train_frame,pandas.DataFrame(train_expected,columns=self.test_train_frame.columns))
-        pandas.testing.assert_frame_equal(test_frame,pandas.DataFrame(test_expected,columns=self.test_test_frame.columns))
-
-
-        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='median', axis=0, missing_values = 'NaN',as_frame = False)        
-        train_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,2.]])
-        test_expected = numpy.array([[1.,1.],[2.,2.],[2.5,3.],[4.,4.]])
-        numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train array: using median')
-        numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test array: using median')
-
-        train_frame, test_frame = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=0, missing_values = 'NaN',as_frame = True)        
-        pandas.testing.assert_frame_equal(train_frame,pandas.DataFrame(train_expected,columns=self.test_train_frame.columns))
-        pandas.testing.assert_frame_equal(test_frame,pandas.DataFrame(test_expected,columns=self.test_test_frame.columns))
-
-
-        train_array, test_array = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=1, missing_values = 'NaN',as_frame = False)        
+        # return frames, imputing over columns index
+        self.test_train_frame['two'].iloc[3]=numpy.nan
+        self.test_test_frame['one'].iloc[2]=numpy.nan
+        train_frame, test_frame = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, columns = ['one','two'], strategy='mean', axis=1,as_frame = True)
         train_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,4.]])
-        test_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,4.]])
-        numpy.testing.assert_array_equal(train_array,train_expected,err_msg='Testing correct imputation procedure of train array: using mean')
-        numpy.testing.assert_array_equal(test_array,test_expected,err_msg='Testing correct imputation procedure of test array: using mean')
-
-        train_frame, test_frame = test_preprocessor.impute_numerical_nans(self.test_train_frame,self.test_test_frame, strategy='mean', axis=1, missing_values = 'NaN',as_frame = True)        
+        test_expected = numpy.array([[1.,1.],[2.,2.],[3.,3.],[4.,4.]])        
         pandas.testing.assert_frame_equal(train_frame,pandas.DataFrame(train_expected,columns=self.test_train_frame.columns))
         pandas.testing.assert_frame_equal(test_frame,pandas.DataFrame(test_expected,columns=self.test_test_frame.columns))
-    
+
+    def test_impute_categorical_nans(self):
+        """test nan categorical imputing"""
+        test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name)
+
+        train_animals = pandas.Categorical(['bird','bird','bird','bird', numpy.NaN,'bird','bird'], categories=["bird", "cat", "dog","cheetah"])
+        train_cars = pandas.Categorical(['audi','audi','audi','audi', numpy.NaN,'audi','audi'], categories=["audi", "fiat", "opel", "volvo"])
+        train_frame = pandas.DataFrame({'cars':train_cars,'animals':train_animals})
+        
+        test_animals = pandas.Categorical([numpy.NaN,'bird','bird','bird','bird','bird','bird'], categories=["bird", "cat", "dog","cheetah"])
+        test_cars = pandas.Categorical(['audi','audi','audi',numpy.NaN, numpy.NaN,'audi','audi'], categories=["audi", "fiat", "opel", "volvo"])
+        test_frame = pandas.DataFrame({'cars':test_cars,'animals':test_animals})
+        
+        # check on criterion value
+        self.assertRaises(ValueError,test_preprocessor.impute_categorical_nans,train_frame,test_frame,['animals'],'bafo',0,False)
+        # return arrays
+        imputed_train_array, imputed_test_array = test_preprocessor.impute_categorical_nans(train_frame, test_frame, ['animals'], strategy='local', axis=0, as_frame = False)
+        expected_result = numpy.array(['bird','bird','bird','bird','bird','bird','bird'])
+        numpy.testing.assert_array_equal(imputed_train_array[:,0],expected_result,err_msg = 'Testing imputation of train set, local strategy')
+        numpy.testing.assert_array_equal(imputed_test_array[:,0],expected_result,err_msg = 'Testing imputation of test set, local strategy')
+      
+        # return frames
+        imputed_train_frame, imputed_test_frame = test_preprocessor.impute_categorical_nans(train_frame, test_frame, ['cars'], strategy='global', axis=0, as_frame = True) 
+        expected_animals = pandas.Categorical(['bird','bird','bird','bird', 'bird','bird','bird'], categories=["bird", "cat", "dog","cheetah"])
+        expected_cars = pandas.Categorical(['audi','audi','audi','audi', 'audi','audi','audi'], categories=["audi", "fiat", "opel", "volvo"])
+        expected_frame = pandas.DataFrame({'cars':expected_cars,'animals':expected_animals})
+        pandas.testing.assert_frame_equal(expected_frame, imputed_train_frame)
+        pandas.testing.assert_frame_equal(expected_frame, imputed_test_frame)        
+        
     def test_rescale_features(self):
         """test features rescaling"""
         test_preprocessor = DataPreprocessor(self.train_file_name, self.test_file_name,features_to_rescale=['babo'])
@@ -172,8 +184,8 @@ class TestDataPreprocessor(unittest.TestCase):
         test_frame = pandas.DataFrame(numpy.array([[5.,2.],[1.,2.],[1.,.3],[4.,.2]]),columns=['babo','bibo'])
         
         train_array, test_array = test_preprocessor.rescale_features(train_frame, test_frame, as_frame = False)
-        train_expected = numpy.array([[-0.35583   ,  0.99918467],[-0.35583   ,  0.99918467],[-0.96582428, -0.9420884 ],[ 1.67748427, -1.05628094]])
-        test_expected = numpy.array([[ 2.3552557 ,  0.99918467],[-0.35583   ,  0.99918467],[-0.35583   , -0.9420884 ],[ 1.67748427, -1.05628094]])
+        train_expected = numpy.array([[-0.35583   ,  2.],[-0.35583   ,  2.],[-0.96582428, .3],[ 1.67748427, .2]])
+        test_expected = numpy.array([[ 2.3552557 ,  2.],[-0.35583   ,  2.],[-0.35583   , .3 ],[ 1.67748427, .2]])
         numpy.testing.assert_array_almost_equal(train_array,train_expected,err_msg='Testing correct rescaling procedure of train array')
         numpy.testing.assert_array_almost_equal(test_array,test_expected,err_msg='Testing correct rescaling procedure of test array')
     
