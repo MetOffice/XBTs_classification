@@ -57,12 +57,13 @@ class ClassificationExperiment(object):
 
             if diagnostic:
                 print('operation: '+key)
-                print('moudule: '+ module_name)
-                print('moudule: '+ function_name)
-                print('inputs: '+inputs)
+                print('module: '+ module_name)
+                print('function: '+ function_name)
+                print('inputs:')
+                print(inputs)
   
-            module = importlib.import_module()
-            function = module.get_attr(function_name)
+            module = importlib.import_module(module_name)
+            function = getattr(module,function_name)
             
             # Apply operation on training set
             inputs['dataframe'] = self.train_set
@@ -75,8 +76,8 @@ class ClassificationExperiment(object):
     def imputation(self):
         """Impute categorical and numerical missing data"""
         
-        numerical = self.train_set._get_numeric_data()
-        categorical = [column for column in self.train.columns if column not in numerical]
+        numerical = self.train_set._get_numeric_data().columns
+        categorical = [column for column in self.train_set.columns if column not in numerical]
         
         self.train_set, self.test_set = self.preprocessor.impute_numerical_nans(self.train_set, self.test_set, numerical, 'median', 0)
         self.train_set, self.test_set = self.preprocessor.impute_categorical_nans(self.train_set, self.test_set, categorical, 'local', 0)
@@ -92,8 +93,6 @@ class ClassificationExperiment(object):
 
         self.train_set = temp_frame.iloc[0:index,:]
         self.test_set = temp_frame.iloc[index:,:]
-
-        self.preprocessor.features_to_rescale = self.train_set.columns
         
     def rescale(self):
         if self.dictionary['rescaling']:
