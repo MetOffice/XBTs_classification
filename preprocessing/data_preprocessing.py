@@ -106,7 +106,7 @@ class DataPreprocessor(object):
                 raise ValueError('Only two types of criteria are allowed: \"local\" and \"global\"')
 
             
-            #buil multinomial distribution
+            #build multinomial distribution
             n_extractions = dataframe_1_nan_indexes.size + dataframe_2_nan_indexes.size
             filling_values = numpy.random.choice(classes,n_extractions,p=classes_counts.astype(float)/classes_counts.sum())
             dataframe_1[category].iloc[dataframe_1_nan_indexes] = filling_values[:dataframe_1_nan_indexes.size]

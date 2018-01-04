@@ -1,19 +1,7 @@
 """Collection of methods implementing features engineering for the XBTs classification project"""
 
-import json
 import numpy
-
-def apply_features_engineering(dataframe,json_descriptor):
-    operations = load_operations(json_descriptor)
-    return operations    
-    
-def load_operations(filename):
-    # Reading data
-    with open(filename, 'r') as f:
-     data = json.load(f)
-     print(data)
-
-
+        
 def probe_type_output(dataframe, column):
     """Redefine the target outputs as \"instrument_type\" and \"instrument_type_and_manifacturer\"."""
 
@@ -34,7 +22,6 @@ def probe_type_output(dataframe, column):
         dataframe[column]=dataframe[column].str.replace(' ,',',')        
         dataframe[column]=dataframe[column].str.replace(', ',',')      
         dataframe[column]=dataframe[column].str.replace('SUBMARINE-LAUNCHED EXPENDABLE BATHYTHERMOGRAPH,','')
-        
         # instrument type
         dataframe[column+'_type']=dataframe[column].str.split(',').str.get(-2)
         

@@ -1,4 +1,3 @@
-import jsons
 import numpy 
 import pandas 
 import unittest
@@ -98,24 +97,6 @@ class TestFeaturesEngineering(unittest.TestCase):
         self.test_frame = pandas.DataFrame.from_dict(test_dictionary)   
         self.result_frame = pandas.DataFrame.from_dict(result_dictionary)
     
-        descriptor_dictionary={'input_features':['max_depth', 'lat', 'lon'],
-                               'output_features':['instrument_type', 'instrument_type_and_manifacturer'],
-                               'features_to_get_labeled':[],
-                               'features_to_get_dummy':[], 
-                               'features_to_rescale':[],
-                               'features_engineering':{'modulename':'preprocessing.features_engineering',
-                                                       'operations':{'1':{'function_name':'probe_type_output',
-                                                                         'parameters':{'column':'instrument'}},
-                                                                    '2':{'function_name':'map_attributes_to_NaN',
-                                                                         'parameters':{'column':'max_depth',
-                                                                                       'operator':'<',
-                                                                                       'target_value':'0'}},
-                                                                    '3':{'function_name':'map_attributes_to_NaN',
-                                                                         'parameters':{'column':'platform',
-                                                                                       'operator':'==',
-                                                                                       'target_value':'O'}},
-                                                                    '4':{'function_name':'convert_list_to_integer',
-                                                                         'parameters':{'column':'depth_profile'}}}}}
     def test_probe_type_output(self):
         """Test correct creation of output target features"""
         
