@@ -1,27 +1,46 @@
 """Classification for a single experimental set up"""
 
+import argparse
+import ast
+import copy
 import importlib
 import json
+import numpy
 import os
 import pandas
 from preprocessing.data_preprocessing import  DataPreprocessor
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import LabelEncoder
+pandas.options.mode.chained_assignment = None
+
+class NumpyEncoder(json.JSONEncoder):
+    """Encoder to print the result of tuning into a json file"""
+    def default(self, obj):
+        if isinstance(obj, numpy.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
 
 class ClassificationExperiment(object):
     def __init__(self, train_file_name, test_file_name, json_descriptor):
         self.train_file_name = train_file_name
         self.test_file_name = test_file_name
         self.json_descriptor = json_descriptor
-        self.primary_keys = ['learner', 'input_features', 'operations', 'rescaling', 'tuning']
+        self.primary_keys = ['learner', 'input_features', 'output_features','operations','rescale_all', 'tuning']
         self.dictionary = None
+        self.output_maps = None
         self.preprocessor = None
         self.train_set = None
         self.test_set = None
+        
         
     def read_json_file(self):
         """Open json descriptor file, load its content into a dictionary"""
         
         if not os.path.isfile(self.json_descriptor):
-            raise ValueError('Missing Json descriptor!')
+            raise ValueError('Missing json descriptor!')
         else:
             with open(self.json_descriptor) as json_data:
                 dictionary = json.load(json_data)
@@ -37,14 +56,20 @@ class ClassificationExperiment(object):
             self.dictionary = test_dictionary
         
     def get_datasets(self):
-        """Load train and test datasets, determines features to be mapped to dummy and to integers"""
+        """Load train and test datasets, determines useless features, features to be mapped to dummy and to integers"""
         
-        init_dictionary = self.dictionary['input_features']
+        init_dictionary = copy.deepcopy(self.dictionary['input_features'])
         init_dictionary['train_dataset_name'] = self.train_file_name
         init_dictionary['test_dataset_name'] = self.test_file_name
         self.preprocessor = DataPreprocessor(**init_dictionary)
         self.train_set, self.test_set = self.preprocessor.load_data(stack = False)
             
+    def remove_useless_features(self):
+        """Remove other features we would not be interested in"""
+        
+        self.preprocessor.remove_useless_features(self.train_set)
+        self.preprocessor.remove_useless_features(self.test_set)
+                    
     def apply_operations(self, diagnostic =  False):
         """Read operations to be applied, call the necessary modules and functions. Print relevant information if diagnostic enabled"""
         
@@ -73,6 +98,18 @@ class ClassificationExperiment(object):
             inputs['dataframe'] = self.test_set
             function(**inputs)
 
+    def get_class_codes_maps(self):
+        """Help method for storing information about class codes for each output target"""
+        
+        temp_frame = pandas.concat([self.train_set,self.test_set])
+        encoder = LabelEncoder()
+        
+        self.output_maps = {}
+        for output_target in self.dictionary['output_features']:
+            encoder.fit(temp_frame[output_target])
+            encoder_name_mapping = dict(zip(encoder.transform(encoder.classes_), encoder.classes_,))
+            self.output_maps[output_target] = encoder_name_mapping
+
     def imputation(self):
         """Impute categorical and numerical missing data"""
         
@@ -88,21 +125,124 @@ class ClassificationExperiment(object):
         index = self.train_set.shape[0]
         temp_frame = pandas.concat([self.train_set,self.test_set])
         
-        self.preprocessor.categorical_features_to_label(temp_frame)
-        self.preprocessor.categorical_features_to_dummy(temp_frame)
+        if self.preprocessor.features_to_get_labeled:
+            self.preprocessor.categorical_features_to_label(temp_frame)
+        if self.preprocessor.features_to_get_dummy:
+            self.preprocessor.categorical_features_to_dummy(temp_frame)
 
         self.train_set = temp_frame.iloc[0:index,:]
         self.test_set = temp_frame.iloc[index:,:]
         
     def rescale(self):
-        if self.dictionary['rescaling']:
+        """Rescale the collection of input features described by the user"""
+        if self.dictionary['rescale_all']:
+            # rescale all input features
+            self.preprocessor.features_to_rescale = [column for column in self.train_set.columns if column not in self.dictionary['output_features']]
             self.preprocessor.rescale_features(self.train_set, self.test_set)
+        else:
+            self.preprocessor.rescale_features(self.train_set, self.test_set)
+            
+    def generate_train_test_arrays(self):
+        """Generate input train and test arrays, and a collection of output train and test arrays"""
+        
+        input_features = [column for column in self.train_set.columns if column not in self.dictionary['output_features']]
+        self.X_train = self.train_set[input_features].values 
+        self.X_test = self.test_set[input_features].values
+        
+        self.y_trains = [self.train_set[column].values for column in self.dictionary['output_features']]
+        self.y_tests = [self.test_set[column].values for column in self.dictionary['output_features']]
+
+    def optimize_and_predict(self, out_path='.', year=''):
+        """Get information about the learner to be used, the hyperparameters to be tuned, and the use grid-search"""
+        
+        learner_dictionary = self.dictionary['learner']
+        learner_module_name = learner_dictionary['module_name']
+        learner_class_name =  learner_dictionary['python_class']
+        
+        learner_module = importlib.import_module(learner_module_name)
+        learner_class = getattr(learner_module, learner_class_name)
+        learner = learner_class()
+        
+        grid_search_parameters = self.dictionary['tuning']
+        grid_search_parameters['estimator'] = learner
+
+        for key, item in grid_search_parameters['param_grid'].iteritems():
+            if isinstance(item, unicode):
+                grid_search_parameters['param_grid'][key] = ast.literal_eval(item)
+                
+        grid_search = GridSearchCV(**grid_search_parameters)
+       
+        classification_result = {}
+        
+        sub_directory_name = os.path.basename(self.json_descriptor).split('.')[0]
+        
+        for y_train, y_test, output_target in zip(self.y_trains, self.y_tests, self.dictionary['output_features']):
+            
+            grid_search.fit(self.X_train, y_train)
+            
+            prediction_probabilities = grid_search.predict_proba(self.X_test)
+            print(numpy.unique(y_train))
+            print(numpy.unique(y_test))
+            print(prediction_probabilities.shape)
+            prediction = grid_search.predict(self.X_test)
+            classification_accuracy_score = accuracy_score(prediction, y_test)
+            
+            classification_result['probabilities'] = prediction_probabilities.mean(axis=0)
+            classification_result['class_mapping'] = self.output_maps[output_target]
+            classification_result['accuracy'] = classification_accuracy_score
+            classification_result['rescale_all'] = self.dictionary['rescale_all']
+            classification_result['input_features'] = self.dictionary['input_features']
+            classification_result['applied_operations'] = self.dictionary['operations'].keys()
+             
+            self.generate_results(output_target, out_path, learner_class_name, sub_directory_name, grid_search.cv_results_, classification_result, year)
+             
+                        
+    def generate_results(self, output_target, out_path, learner_class_name, sub_directory_name, tuning_result, classification_result, year):
+        """Store results from tuning and prediction into json files, generating a proper tree of directories"""
+        
+        base_dir = os.path.join(out_path, learner_class_name)
+        out_dir = os.path.join(base_dir,sub_directory_name)
+        if not os.path.isdir(base_dir):
+            os.makedirs(base_dir)
+        if not os.path.isdir(out_dir):
+            os.makedirs(out_dir)
+            
+        tuning_file_name = os.path.join(out_dir,year+output_target+'_tuning.json')
+        prediction_file_name = os.path.join(out_dir,year+output_target+'_prediction.json')
+        
+        for name, data in zip([tuning_file_name, prediction_file_name], [tuning_result, classification_result]):
+            with open(name, 'w') as fp:
+                json.dump(data, fp, cls=NumpyEncoder)
     
-   #*=============================================
-   
-    # call tuning module
-    # return tuned parameter
-    # if flag, return tuning procedure
+def main():
+    """Run a specific classification experiment"""
     
-    # call prediction
-    # return accuracy, recall, and averaged probabilities along the sample
+    parser = argparse.ArgumentParser(description='Run a specific classification experiment')
+    parser.add_argument('--path',default='./',help='input train and test files location')
+    parser.add_argument('--outpath',default='./',help='output train and test files location')
+    parser.add_argument('--year', default='',help='year')
+    parser.add_argument('train',help='training set name')
+    parser.add_argument('test',help='test set name')
+    parser.add_argument('json_descriptor',help='json descriptor file name')
+    
+    args = parser.parse_args()
+
+    train_file_name = args.path+args.train
+    test_file_name = args.path+args.test
+    
+    experiment = ClassificationExperiment(train_file_name,test_file_name,args.json_descriptor)
+    experiment.read_json_file()
+    experiment.get_datasets()
+    experiment.remove_useless_features()
+    experiment.apply_operations()   
+    experiment.get_class_codes_maps()
+    experiment.imputation()
+    experiment.categorical_features_conversion()
+    experiment.rescale()
+    experiment.generate_train_test_arrays()
+    experiment.optimize_and_predict(out_path=args.outpath, year = args.year)
+
+    
+if __name__ == "__main__":
+    # execute only if run as a script
+    main()

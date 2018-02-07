@@ -14,6 +14,7 @@ class TestClassificationExperiment(unittest.TestCase):
         self.dictionary = {'input_features':{'features_to_get_labeled':['cars'],
                                              'features_to_get_dummy':['animals'],
                                              'features_to_rescale':['one','two']},
+                           'output_features':['cars_animals'],
                            'operations':{'set_2_to_1':{'module':'classification.test.dummy_module',
                                                        'function':'change_value',
                                                        'inputs':{'column':'one',
@@ -25,7 +26,7 @@ class TestClassificationExperiment(unittest.TestCase):
                                                                    'inputs':{'left_column':'cars',
                                                                              'right_column':'animals',
                                                                              'filling_value':'gromobo'}}},
-                           'rescaling':True,
+                           'rescale_all':0,
                            'learner':{},
                            'tuning':{}}
     
@@ -70,6 +71,7 @@ class TestClassificationExperiment(unittest.TestCase):
         self.assertEqual(experiment.test_file_name, 'buba')
         self.assertEqual(experiment.json_descriptor, 'biba')
         self.assertEqual(experiment.dictionary, None)
+        self.assertEqual(experiment.output_maps, None)
         self.assertEqual(experiment.preprocessor, None)
         self.assertEqual(experiment.train_set, None)
         self.assertEqual(experiment.test_set, None)
@@ -88,14 +90,14 @@ class TestClassificationExperiment(unittest.TestCase):
         self.assertDictEqual(self.dictionary, experiment.dictionary)
         
     def test_get_datasets(self):
-        """Test correcto datasets loading"""
+        """Test correct datasets loading"""
         
         experiment = ClassificationExperiment(self.train_file_name, self.test_file_name, self.json_descriptor)
         experiment.read_json_file()
         experiment.get_datasets()
         pandas.testing.assert_frame_equal(self.test_frame,experiment.test_set)
         pandas.testing.assert_frame_equal(self.train_frame,experiment.train_set)
-        
+            
     def test_apply_operation(self):
         """Test correct implementation of operations contained in json descriptor"""
         
@@ -113,7 +115,18 @@ class TestClassificationExperiment(unittest.TestCase):
         self.assertTrue(new_label in experiment.test_set.columns)
         numpy.testing.assert_array_equal(experiment.train_set[new_label].values, 'gromobo', err_msg='Testing column addition on train frame')
         numpy.testing.assert_array_equal(experiment.test_set[new_label].values, 'gromobo', err_msg='Testing column addition on train frame')
+    
+    def test_get_class_codes_maps(self):
+        """Test correct output features class mapping"""
         
+        experiment = ClassificationExperiment(self.train_file_name, self.test_file_name, self.json_descriptor)
+        experiment.read_json_file()
+        experiment.get_datasets()
+        experiment.apply_operations()
+        experiment.get_class_codes_maps()
+        
+        self.assertDictEqual(experiment.output_maps, {'cars_animals':{0:'gromobo'}})
+    
     def test_imputation(self):
         """Test correct imputation on train and test set"""
         
@@ -151,8 +164,9 @@ class TestClassificationExperiment(unittest.TestCase):
         numpy.testing.assert_array_equal(experiment.train_set['animals_bird'].values, 1, err_msg='Testing correct conversion of "animals" feature of train set into dummy')
         numpy.testing.assert_array_equal(experiment.test_set['animals_bird'].values, 1, err_msg='Testing correct conversion of "animals" feature of test set into dummy')
         
-    def test_rescale(self):
-        """Testing correctness of rescaling procedure"""
+
+    def test_rescale_specified(self):
+        """Testing correctness of rescaling procedure for specified features"""
         
         experiment = ClassificationExperiment(self.train_file_name, self.test_file_name, self.json_descriptor)
         experiment.read_json_file()
@@ -163,9 +177,43 @@ class TestClassificationExperiment(unittest.TestCase):
         experiment.rescale()
         
         keys = ['one', 'two']
-        check_values = [[numpy.array([-0.49656353, -0.49656353, -0.49656353, -0.49656353, -0.49656353,0.08276059,  2.40005708]), numpy.array([-1.32379273, -0.34836651,  0.62705971,  1.60248593,  0.62705971, -1.32379273,  0.1393466 ])],
-        [numpy.array([-1.32379273, -0.34836651,  0.62705971,  1.60248593,  0.62705971,-1.32379273,  0.1393466 ]), numpy.array([-1.82073295, -0.66208471,  0.49656353,  1.65521178,  0.49656353, -0.08276059, -0.08276059])]]
+        check_values = [[numpy.array([-0.49656353, -0.49656353, -0.49656353, -0.49656353, -0.49656353,0.08276059,  2.40005708]), numpy.array([-0.49656353, -0.49656353, -0.49656353,  0.66208471,  0.08276059, 0.08276059,  2.40005708])],
+        [numpy.array([-1.32379273, -0.34836651,  0.62705971,  1.60248593,  0.62705971,-1.32379273,  0.1393466 ]), numpy.array([-1.32379273, -0.34836651,  0.62705971,  1.60248593,  0.62705971, 0.1393466 ,  0.1393466 ])]]
         
         for key, values in zip(keys, check_values):
             numpy.testing.assert_array_almost_equal(experiment.train_set[key], values[0], err_msg='Checking correct data rescaling for train set')
             numpy.testing.assert_array_almost_equal(experiment.test_set[key], values[1], err_msg='Checking correct data rescaling for test set')
+   
+    def test_generate_train_test_arrays(self):
+        """Testing correct generation of data arrays for train and test sets"""
+        
+        experiment = ClassificationExperiment(self.train_file_name, self.test_file_name, self.json_descriptor)
+        experiment.read_json_file()
+        experiment.get_datasets()
+        experiment.apply_operations()
+        # does need data with no nans
+        experiment.imputation()
+        experiment.categorical_features_conversion()
+        experiment.rescale()
+        experiment.generate_train_test_arrays()
+        
+        check_values = [numpy.array([[-0.54433105, -1.32379273        ,  0.        , 1],
+                                     [-0.54433105, -0.34836651        ,  0.        , 1],
+                                     [-0.54433105,  0.62705971        ,  0.        , 1],
+                                     [-0.54433105,  1.60248593        ,  0.        , 1],
+                                     [-0.54433105,  0.62705971        ,  0.        , 1],
+                                     [ 0.40824829, -1.32379273        ,  0.        , 1],
+                                     [ 2.31340698,  0.1393466         ,  0.        , 1]]),
+                        numpy.array([[-0.54433105, -1.32379273,  0.        ,1.        ],
+                                     [-0.54433105, -0.34836651,  0.        ,1.        ],
+                                     [-0.54433105,  0.62705971,  0.        ,1.        ],
+                                     [ 0.88453796,  1.60248593,  0.        ,1.        ],
+                                     [ 0.40824829,  0.62705971,  0.        ,1.        ],
+                                     [ 0.40824829,  0.1393466 ,  0.        ,1.        ],
+                                     [ 2.31340698,  0.1393466 ,  0.        ,1.        ]])]
+        
+        numpy.testing.assert_array_almost_equal(check_values[0], experiment.X_train, err_msg = 'Testing numerical correcteness of inpu train array')
+        numpy.testing.assert_array_almost_equal(check_values[1], experiment.X_test, err_msg = 'Testing numerical correcteness of inpu test array')
+        for array_train, array_test in zip(experiment.y_trains, experiment.y_tests):
+            numpy.testing.assert_array_equal(array_train, 'gromobo', err_msg = 'Testing output features train array')
+            numpy.testing.assert_array_equal(array_test, 'gromobo', err_msg = 'Testing output features train array')
