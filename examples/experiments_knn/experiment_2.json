@@ -1,6 +1,6 @@
-{"input_features":{"useless_features":["date", "institute", "country", "platform", "depth_profile"],
+{"input_features":{"useless_features":["date", "country", "platform", "depth_profile"],
                    "features_to_get_labeled":[],
-                   "features_to_get_dummy":[],
+                   "features_to_get_dummy":["institute"],
                    "features_to_rescale":["max_depth","lat","lon"]},
  "output_features":["instrument_type", "instrument_type_and_manifacturer"],
  "operations":{"generate_target_outputs":{"module":"preprocessing.features_engineering",

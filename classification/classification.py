@@ -11,7 +11,6 @@ import pandas
 from preprocessing.data_preprocessing import  DataPreprocessor
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import recall_score
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import LabelEncoder
 pandas.options.mode.chained_assignment = None
@@ -181,18 +180,18 @@ class ClassificationExperiment(object):
             grid_search.fit(self.X_train, y_train)
             
             prediction_probabilities = grid_search.predict_proba(self.X_test)
-            print(numpy.unique(y_train))
-            print(numpy.unique(y_test))
-            print(prediction_probabilities.shape)
             prediction = grid_search.predict(self.X_test)
             classification_accuracy_score = accuracy_score(prediction, y_test)
+            classification_recall_score = recall_score(prediction, y_test, average='weighted')            
             
             classification_result['probabilities'] = prediction_probabilities.mean(axis=0)
             classification_result['class_mapping'] = self.output_maps[output_target]
             classification_result['accuracy'] = classification_accuracy_score
+            classification_result['recall'] = classification_recall_score
             classification_result['rescale_all'] = self.dictionary['rescale_all']
             classification_result['input_features'] = self.dictionary['input_features']
             classification_result['applied_operations'] = self.dictionary['operations'].keys()
+            classification_result['best_hyperparameters'] = grid_search.best_params_
              
             self.generate_results(output_target, out_path, learner_class_name, sub_directory_name, grid_search.cv_results_, classification_result, year)
              
@@ -214,23 +213,13 @@ class ClassificationExperiment(object):
             with open(name, 'w') as fp:
                 json.dump(data, fp, cls=NumpyEncoder)
     
-def main():
-    """Run a specific classification experiment"""
+def run_experiment(data_path, result_path, year, train_set_name, test_set_name, json_descriptor):
+    """Run a single classification experiment"""
     
-    parser = argparse.ArgumentParser(description='Run a specific classification experiment')
-    parser.add_argument('--path',default='./',help='input train and test files location')
-    parser.add_argument('--outpath',default='./',help='output train and test files location')
-    parser.add_argument('--year', default='',help='year')
-    parser.add_argument('train',help='training set name')
-    parser.add_argument('test',help='test set name')
-    parser.add_argument('json_descriptor',help='json descriptor file name')
+    train_file_name = os.path.join(data_path, train_set_name)
+    test_file_name = os.path.join(data_path, test_set_name)
     
-    args = parser.parse_args()
-
-    train_file_name = args.path+args.train
-    test_file_name = args.path+args.test
-    
-    experiment = ClassificationExperiment(train_file_name,test_file_name,args.json_descriptor)
+    experiment = ClassificationExperiment(train_file_name, test_file_name, json_descriptor)
     experiment.read_json_file()
     experiment.get_datasets()
     experiment.remove_useless_features()
@@ -240,7 +229,22 @@ def main():
     experiment.categorical_features_conversion()
     experiment.rescale()
     experiment.generate_train_test_arrays()
-    experiment.optimize_and_predict(out_path=args.outpath, year = args.year)
+    experiment.optimize_and_predict(result_path, year)
+    
+def main():
+    """For running a specific classification experiment from shell"""
+    
+    parser = argparse.ArgumentParser(description='Run a specific classification experiment')
+    parser.add_argument('--path',default='./',help='input train and test files location')
+    parser.add_argument('--outpath',default='./',help='outputpath for results')
+    parser.add_argument('--year', default='',help='year')
+    parser.add_argument('train',help='training set name')
+    parser.add_argument('test',help='test set name')
+    parser.add_argument('json_descriptor',help='json descriptor file name')
+    
+    args = parser.parse_args()
+
+    run_experiment(args.path, args.outpath, args.year, args.train, args.test, args.json_descriptor)
 
     
 if __name__ == "__main__":
