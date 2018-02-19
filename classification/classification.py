@@ -206,8 +206,8 @@ class ClassificationExperiment(object):
         if not os.path.isdir(out_dir):
             os.makedirs(out_dir)
             
-        tuning_file_name = os.path.join(out_dir,year+output_target+'_tuning.json')
-        prediction_file_name = os.path.join(out_dir,year+output_target+'_prediction.json')
+        tuning_file_name = os.path.join(out_dir,year+'_'+output_target+'_tuning.json')
+        prediction_file_name = os.path.join(out_dir,year+'_'+output_target+'_prediction.json')
         
         for name, data in zip([tuning_file_name, prediction_file_name], [tuning_result, classification_result]):
             with open(name, 'w') as fp:
