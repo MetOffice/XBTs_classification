@@ -1,0 +1,16 @@
+#!/bin/bash -l
+#SBATCH --mem=20G
+#SBATCH --ntasks=4
+#SBATCH --output=/data/users/fcapponi/XBTs_classification_results/KNN.out
+#SBATCH --error=/data/users/fcapponi/XBTs_classification_results/KNN.err
+#SBATCH --time=01:00:00
+
+MYPATH='/data/users/fcapponi/XBTs_classification/'                         # folder containig all training and test datasets
+OUTPATH='/data/users/fcapponi/XBTs_classification_results/'              # folder where all the results should be stored
+YEAR=1976                                                                             # year to be processed
+TRAIN=train_${YEAR}.csv                                                                # train dataset name
+TEST=test_${YEAR}.csv                                                                  # test dataset name
+DESCRIPTOR='/net/home/h05/fcapponi/Documents/XBTs_classification/examples/experiments_knn/experiment_1.json'
+
+python2.7 -m classification.classification --path $MYPATH --outpath $OUTPATH --year $YEAR $TRAIN $TEST $DESCRIPTOR
+ 
