@@ -1,7 +1,9 @@
-"""Redefine train-test split. Apply features engineering. Produce a train/set dataset for each year"""
+"""
+Redefine train-test split. Apply some data preprocessing if required from user. Produce a train/set dataset for each year
+"""
 
 import argparse
-from data_preprocessing import  DataPreprocessor
+from preprocessing.data_preprocessing import  DataPreprocessor
 
 def main():
 

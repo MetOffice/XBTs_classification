@@ -7,7 +7,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
 
 class DataPreprocessor(object):
-
+    """Class designed for multiple purposes operations on data"""
     @staticmethod
     def sanity_check(element,element_type):
         """Check that the given element is the correct instance of element_type"""

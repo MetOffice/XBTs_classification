@@ -1,5 +1,3 @@
-"""Classification for a single experimental set up"""
-
 import argparse
 import ast
 import copy
@@ -24,6 +22,9 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 class ClassificationExperiment(object):
+    """
+    Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
+    """
     def __init__(self, train_file_name, test_file_name, json_descriptor):
         self.train_file_name = train_file_name
         self.test_file_name = test_file_name
