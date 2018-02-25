@@ -8,6 +8,7 @@ import json
 import numpy
 import os
 import pandas
+import time
 from preprocessing.data_preprocessing import  DataPreprocessor
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import recall_score
@@ -168,17 +169,21 @@ class ClassificationExperiment(object):
         for key, item in grid_search_parameters['param_grid'].iteritems():
             if isinstance(item, unicode):
                 grid_search_parameters['param_grid'][key] = ast.literal_eval(item)
-                
+        print('Initializing grid search')
         grid_search = GridSearchCV(**grid_search_parameters)
        
         classification_result = {}
         
         sub_directory_name = os.path.basename(self.json_descriptor).split('.')[0]
         
+        print('Starting tuning procedure')
         for y_train, y_test, output_target in zip(self.y_trains, self.y_tests, self.dictionary['output_features']):
-            
+          
+            start = time.time()
             grid_search.fit(self.X_train, y_train)
-            
+            end = time.time()
+
+            print('Tuning procedure for '+ output_target+' completed, time elapsed = '+str(end-start)+' seconds.')
             prediction_probabilities = grid_search.predict_proba(self.X_test)
             prediction = grid_search.predict(self.X_test)
             classification_accuracy_score = accuracy_score(prediction, y_test)
