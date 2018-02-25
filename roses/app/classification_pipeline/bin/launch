@@ -1,0 +1,16 @@
+#!/bin/bash
+# Author: Francesco Capponi
+# mail: francesco.capponi@metoffice.gov.uk
+# date: 23/02/2018
+# Base script for launching single experiment classification
+
+TIMESTRING=$(rose date -c -s +P${CYLC_TASK_PARAM_day}D -f "%Y%m%d")
+YEAR=${ROSE_TASK_CYCLE_TIME:0:4}
+TRAIN=train_${YEAR}.csv
+TEST=test_${YEAR}.csv
+DESCRIPTOR=${EXPERIMENT_PREFIX}_${1}.json
+
+echo -e "#################\n Year ${YEAR}, experiment ${1}\n\n#################\n"
+
+python2.7 -m classification.classification --path ${SOURCE} --outpath ${{OUTPATH}} --year ${YEAR} ${TRAIN} ${TEST} ${DESCRIPTOR}
+
