@@ -13,35 +13,55 @@ You will also an enough updated version of the following python libraries:
 * `Pandas <https://pandas.pydata.org>`_, version 0.20.3 or higher.
 * `Scikit-learn <http://scikit-learn.org/stable/>`_ , version 0.18.1 or higher.
 
+If you are familiar with packet management softwares like `macport <https://guide.macports.org/>`_, `homebrew <https://brew.sh/>`_, `apt <https://help.ubuntu.com/lts/serverguide/apt.html/>`_ or others, these will be a fairly easy task. Otherwise you can also install `anaconda <https://anaconda.org/>`_.
+If you decide to adopt the latter, then be sure that also the :code:`accelerat` package is installed: once you have managed to install anaconda this can be easily achieved by typing
+
+.. code-block:: console
+
+   $ conda update conda
+   $ conda install accelerate
+
 Get the code
 ------------
 
 Create a project folder, like
 
-.. code-block:: bash
+.. code-block:: console
 
    $ mkdir ${HOME}/Project_directory
 
 in such folder, checkout a working copy of the code repository by tiping
 
-.. code-block:: bash
+.. code-block:: console
 
    $ git clone https://github.com/Fracappo87/XBTs_classification
 
 then add the following line to your :code:`.bashrc` file
 
-.. code-block:: bash
+.. code-block:: shell
 
-   export PYTHONPATH="$PYTHONPATH:$HOME/Project_directory/XBTs_classification"
+   export PYTHONPATH=$PYTHONPATH:$HOME/Project_directory/XBTs_classification
 
 Run the code
 ------------
 
 Before starting to use the system, move into the code directory and run all the tests:
 
-.. code-block:: bash
+.. code-block:: console
 
-   $ cd $HOME/Project_directory/XBTs_classification"
+   $ cd $HOME/Project_directory/XBTs_classification
    $ python2.7 -m unittest discover
 
-it will take less then one minute. If all the tests passed successfully then you are ready to use the **XBTs_classification** end-to-end system!
+it will take less then one minute. If all the tests passed successfully you should see something like
+
+.. code-block:: console
+
+   $ cd $HOME/Project_directory/XBTs_classification
+   $ python2.7 -m unittest discover
+   ......................
+   --------------------------------
+   Ran XX tests in YYs
+
+   OK
+
+then you will be ready to use the **XBTs_classification** end-to-end system!

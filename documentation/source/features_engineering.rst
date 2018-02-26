@@ -1,3 +1,5 @@
+.. _features_engineering:
+
 Features Engineering
 ====================
 

@@ -13,13 +13,13 @@ Single classification experiment
 
 It can be called by a :code:`main()` function using the following command
 
-.. code-block:: bash
+.. code-block:: console
 
   $ python2.7 -m   classification.classification TRAIN_SET_NAME TEST_SET_NAME JSON_DESCRIPTOR
 
 further details can be obtaine using the :code:`-h` flag
 
-.. code-block:: bash
+.. code-block:: console
 
   usage: classification.py [-h] [--path PATH] [--outpath OUTPATH] [--year YEAR]
                           train test json_descriptor
@@ -45,13 +45,13 @@ Multiple classification experiments
 
 Basi usage is:
 
-.. code-block:: bash
+.. code-block:: console
 
   $ python2.7 -m   classification.classification_pipeline TRAIN_SET_NAME TEST_SET_NAME JSON_DESCRIPTORS_FOLDER
 
 further details can be obtaine using the :code:`-h` flag
 
-.. code-block:: bash
+.. code-block:: console
 
   usage: classification_pipeline.py [-h] [--path PATH] [--outpath OUTPATH]
                                   [--year YEAR]

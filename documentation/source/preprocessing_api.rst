@@ -8,13 +8,13 @@ Preprocessing API
 
 Basic usage is
 
-.. code-block:: bash
+.. code-block:: console
 
   $ python2.7 -m preprocessing.preprocessor TRAIN_DATASET_NAME TEST_DATASET_NAME
 
 further options are provided by typing :code:`python2.7 -m preprocessing.preprocessor -h`
 
-.. code-block:: bash
+.. code-block:: console
 
   $ python2.7 -m preprocessing.preprocessor -h
   usage: preprocessor.py [-h] [--path PATH] [--outpath OUTPATH]
