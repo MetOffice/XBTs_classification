@@ -1,82 +1,23 @@
-import re
+#!/usr/bin/env python
 
-import numpy
+import os
 import sklearn.model_selection
 import sklearn.neighbors
 import sklearn.ensemble
 import sklearn.preprocessing
+import sklearn.neural_network
 import pandas
 
 import pdb
+import xbt_preprocess
+from xbt_preprocess import XBT_RESULTS_DIR, XBT_PATH_TEMPLATE
 
-INSTRUMENT_REGEX_STRING = 'XBT\: (?P<type>[\w\s;:-]+)[\s]([(](?P<brand>[\w -.:;]+)[)])?'
 
-INSTRUMENT_REGEX_STRING3 = 'XBT[:][\s](?P<type>[\w\s;:-]+)([\s]*)([(](?P<brand>[\w\s.:;-]+)[)])?'
+NUM_CV_SCORES = 3
 
-XBT_PATH_TEMPLATE = '/data/users/shaddad/xbt-data/annual_csv/xbt_{year:04d}.csv'
 
 # INSTRUMENT_REGEX_STRING2 = 'XBT\: (?P<type>[\w\s\-;:]+)([ ][(](?P<brand>[\w .-:;]+)[)])'
 
-def get_type(instr_str):
-    try:
-        matches = re.search(INSTRUMENT_REGEX_STRING3 ,instr_str)
-        type_str = matches.group('type')
-    except AttributeError as e1:
-        pdb.set_trace()
-    return str(type_str)
-
-def get_brand(instr_str):
-    try:
-        matches = re.search(INSTRUMENT_REGEX_STRING3,instr_str)
-        brand_str = matches.group('brand')
-    except AttributeError as e1:
-        pdb.set_trace()
-    return str(brand_str)
-
-def category_to_label(feature1):
-    return numpy.array(pandas.get_dummies(feature1))
-
-def normalise_lat(feature_lat):
-    return numpy.array(feature_lat / 90.0).reshape(-1,1)
-
-def normalise_lon(feature_lon):
-    return numpy.array(feature_lon / 180.0).reshape(-1, 1)
-
-def load_and_preprocess_data(path_xbt_data):
-
-    xbt_df_raw = pandas.read_csv(path_xbt_data)[:10000]
-    xbt_df = pandas.DataFrame.copy(xbt_df_raw[~xbt_df_raw.instrument.str.contains('UNKNOWN')])
-
-    xbt_df['type'] = xbt_df.instrument.apply(get_brand)
-    xbt_df['brand'] = xbt_df.instrument.apply(get_type)
-
-    cat_features = ['country','cruise_number','institute','platform','type','brand']
-    label_mappings = {}
-
-    for feature_name in cat_features:
-        try:
-            label_enc1 = sklearn.preprocessing.LabelEncoder()
-            label_enc1.fit(xbt_df[feature_name])
-            xbt_df[feature_name] = label_enc1.transform(xbt_df[feature_name])
-            label_mappings[feature_name] = label_enc1
-        except:
-            pdb.set_trace()
-
-    return xbt_df
-
-
-def get_ml_dataset(xbt_df, input_features, output_feature):
-    input_features_data = {}
-
-    for ifname, iffunc in input_features.items():
-        input_features_data[ifname] = iffunc(xbt_df[ifname])
-
-    X = numpy.concatenate(list(input_features_data.values()), axis=1)
-    y = xbt_df[output_feature]
-
-    X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
-        X, y)
-    return X, y, X_train, X_test, y_train, y_test
 
 def run_classifier(classifier_dict, X_train, y_train, X_test, y_test):
     classifier = classifier_dict['classifier']
@@ -92,18 +33,16 @@ def run_classifier(classifier_dict, X_train, y_train, X_test, y_test):
 def process_year(year):
     path_xbt_data = XBT_PATH_TEMPLATE.format(year=year)
 
-    xbt_df = load_and_preprocess_data(path_xbt_data)
+    xbt_df = xbt_preprocess.load_and_preprocess_data(path_xbt_data)
 
-    input_features = {'cruise_number': category_to_label,
-                      'institute': category_to_label,
-                      'platform': category_to_label,
-                      'country': category_to_label,
-                      'lat': normalise_lat,
-                      'lon': normalise_lon}
+    selected_input = ['cruise_number', 'institute', 'platform', 'country',
+                      'lat', 'lon']
+    input_features = {sf1: xbt_preprocess.INPUT_FEATURE_PROCESSORS[sf1] for sf1
+                      in selected_input}
 
-    output_features = ['type','brand']
-    X, y, X_train, X_test, y_train, y_test = get_ml_dataset(xbt_df, input_features,
-                                                      output_features[0])
+    output_features = ['type', 'brand']
+    X, y, X_train, X_test, y_train, y_test = xbt_preprocess.get_ml_dataset(
+        xbt_df, input_features, output_features[0])
 
     classifiers = {}
 
@@ -130,23 +69,47 @@ def process_year(year):
     classifiers['rf'] = {'classifier': sklearn.ensemble.RandomForestClassifier(n_estimators=10, max_depth=2,random_state=0),
                          'name': 'random_forest'
                          }
+
+    # Classification used multilayer perceptron neural et classifier
+    classifiers['mlp'] = {
+        'classifier': sklearn.neural_network.MLPClassifier(
+            solver='lbfgs',
+            alpha=1e-5,
+            hidden_layer_sizes=(5, 2),
+            random_state=1),
+        'name': 'MLP Neural Network Classifier',
+        'alpha': 1e-5,
+        'hidden_layer_sizes': (5, 2),
+        'random_state': 1,
+    }
+
     for class_name, class_dict in classifiers.items():
+        print(f'trying classifier {class_name}')
         # run_classifier(class_dict, X_train, y_train, X_test, y_test)
-        classifiers[class_name]['score'] = sklearn.model_selection.cross_val_score(class_dict['classifier'], X, y, cv=3)
+        classifiers[class_name]['score'] = sklearn.model_selection.cross_val_score(class_dict['classifier'], X, y, cv=NUM_CV_SCORES)
 
     return classifiers
 
-year_list = range(1988,1998)
-results  = {}
-for year in year_list:
-    print(f'processing year {year:04d}')
-    results[year] = process_year(year)
+def main():
+    year_range = (1988,1998)
+    year_list = range(*year_range)
+    results_raw  = {}
 
+    results_for_output = []
+    for year in year_list:
+        print(f'processing year {year:04d}')
 
+        results_raw[year] = process_year(year)
+        for model_id, model1 in results_raw[year].items():
+            res1 = {'model': model1['name'], 'year': year}
+            for ix1, score_val in enumerate(model1['score']):
+                res1['score_{0}'.format(ix1)] = score_val
+            results_for_output += [res1]
 
+    results_df = pandas.DataFrame(results_for_output)
+    res_fname = f'classification_scores_xbt_{year_range[0]}_{year_range[1]}.csv'
+    res_path = os.path.join(XBT_RESULTS_DIR, res_fname)
+    results_df.to_csv(res_path)
 
-
-
-
-
-
+if __name__ == '__main__':
+    main()

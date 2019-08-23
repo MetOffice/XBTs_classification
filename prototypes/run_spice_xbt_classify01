@@ -1,0 +1,10 @@
+#!/bin/bash -l
+#SBATCH --time=30
+#SBATCH --mem=8G
+#SBATCH --ntasks=2
+#SBATCH --output=xbt_classify01.out
+#SBATCH --error=xbt_classify01.err
+
+module load scitools
+cd $HOME/prog/python/machine_learning/
+python xbt_classify_01.py
