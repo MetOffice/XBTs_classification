@@ -11,6 +11,10 @@ REGEX_MODEL_GROUP = 'model'
 UNKOWN_MODEL_STR = 'TYPE UNKNOWN'
 UNKOWN_MANUFACTURER_ST = 'UNKNOWN BRAND'
 
+KEY_DICT = {
+    'CRUISE': 'cruise_number',
+}
+
 def get_model(instr_str):
     try:
         matches = re.search(INSTRUMENT_REGEX_STRING, instr_str)
@@ -43,31 +47,43 @@ class XbtDataset():
         self.xbt_df['model'] = self.xbt_df.instrument.apply(get_model)
         self.xbt_df['manufacturer'] = self.xbt_df.instrument.apply(get_manufacturer)
     
-   
+    def filter_obs(self, key, value):
+        return self.xbt_df[self.xbt_df[key] == value]
+    
     def get_cruise_stats(self):
-        cruise_number_list = list(set(self.xbt_df['cruise_number'].values))
-        self.cruise_stats = {cid: {
-            'num_obs': self.xbt_df[self.xbt_df['cruise_number'] == cid].shape[
-                0],
-            'instruments':
-                list(self.xbt_df[
-                         self.xbt_df[
-                             'cruise_number'] == cid].instrument.unique()),
-            'num_instruments':
-                len(self.xbt_df[
-                        self.xbt_df[
-                            'cruise_number'] == cid].instrument.unique()), }
-            for cid in cruise_number_list}
+        cruise_stats = {}
+        for cid in self.cruises:
+            cruise_data = {}
+            cruise_obs = self.filter_obs(KEY_DICT['CRUISE'], cid)
+            cruise_data['num_obs'] = cruise_obs.shape[0]
+            cruise_data['instruments'] = list(cruise_obs.instrument.unique())
+            cruise_data['num_instruments'] = len(cruise_data['instruments'])
+            cruise_stats[cid] = cruise_data
+        self.cruise_stats = pandas.DataFrame.from_dict(cruise_stats, orient='index')
         return self.cruise_stats
 
     @property
     def unknown_model_dataset(self):
         return self.xbt_df[self.xbt_df.model.str == UNKOWN_MODEL_STR]
     
+    @property
     def unknown_manufacturer_dataset(self):
         return self.xbt_df[self.xbt_df.manufacturer.str == UNKOWN_MANUFACTURER_ST]
     
-
+    @property
+    def instruments_by_platform(self):
+        return self.get_atrributes_per_subset('platform', 'instrument')
+        
+    @property
+    def platforms_by_instrument(self):
+        return self.get_atrributes_per_subset('instrument', 'platform')
+            
+    def get_atrributes_per_subset(self, subset, attr):
+        values = self.get_property_values(subset)
+        return {
+            v1: list(self.filter_obs(subset, v1)[attr].unique())
+            for v1 in values }
+    
     @property
     def num_unknown_model(self):
         return self.unknown_type_dataset.shape[0]
@@ -75,24 +91,54 @@ class XbtDataset():
     @property
     def num_obs(self):
         return self.xbt_df.shape[0]
+    
+    def get_property_values(self, key):
+        return list(self.xbt_df[key].unique())
+    
+    @property
+    def cruises(self):
+        return list(self.xbt_df.cruise_number.unique())
 
     @property
     def instruments(self):
         return list(self.xbt_df.instrument.unique())
+    
+    @property
+    def countries(self):
+        return list(self.xbt_df.country.unique())
 
     @property
     def platforms(self):
         return list(self.xbt_df.platform.unique())
-
+    
+    @property
+    def institutes(self):
+        return list(self.xbt_df.institute.unique())
+    
+    @property
+    def manufacturers(self):
+        return list(self.xbt_df.manufacturer.unique())
+    
+    @property
+    def models(self):
+        return list(self.xbt_df.model.unique())
+    
     @property
     def instrument_distribution(self):
-        return {ins1: self.xbt_df[self.xbt_df.instrument == ins1].shape[0] for ins1 in
-                self.instruments}
+        return self._calc_distribution('instruments')
 
     @property
     def platform_distribution(self):
-        return {plat1: self.xbt_df[self.xbt_df.platform == plat1].shape[0] for plat1 in
-                self.platforms}
+        return self._calc_distribution('platforms')
+    
+    def get_distibution(self, var_name):
+        return {v1: self.xbt_df[self.xbt_df[var_name] == v1].shape[0] for v1 in
+                self[var_name]}
+    
+    def __getitem__(self, key):
+        return getattr(self, key)
+        
+        
 
 
 def get_data_stats(file_path, year):
