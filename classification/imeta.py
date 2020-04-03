@@ -11,6 +11,7 @@ def get_depth_category(depth_list, depth_value):
     for ix1, current in enumerate(depth_list):
         if depth_value > previous and depth_value <= current:
             return ix1
+        previous = current
     return None
 
 def get_model_by_date(model1, model2, date_threshold, obs_date):
