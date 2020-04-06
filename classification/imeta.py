@@ -49,7 +49,7 @@ def imeta_classification(profile_data):
                                      day=profile_data['day'],
                                     )
     depth_ix = get_depth_category(IMETA_VALUES[manufacturer]['depths'], max_depth)
-    if depth_ix:
+    if depth_ix is not None:
         model_func = IMETA_VALUES[manufacturer]['models'][depth_ix]
         model = model_func(profile_date)
     else: # if the max depth is too great, we consider this not to be a valid XBT profile observation
