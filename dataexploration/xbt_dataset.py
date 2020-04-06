@@ -90,10 +90,10 @@ class XbtDataset():
         if key == 'labelled':
             if value == 'labelled':
                 subset_df = self.xbt_df[-self.xbt_df.instrument.apply(
-                    functools.partial(check_value_found, UNKOWN_MODEL_STR))] 
+                    functools.partial(check_value_found, UNKNOWN_STR))] 
             elif value == 'unlabelled':
                 subset_df = self.xbt_df[self.xbt_df.instrument.apply(
-                    functools.partial(check_value_found, UNKOWN_MODEL_STR))]    
+                    functools.partial(check_value_found, UNKNOWN_STR))]    
             elif value == 'all':
                 subset_df = self.xbt_df
         else:
