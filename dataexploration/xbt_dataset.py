@@ -82,6 +82,8 @@ class XbtDataset():
         date_elements = pandas.DataFrame(list(self.xbt_df.date.apply(str).apply(get_year)), columns=date_columns)
         for col1 in date_columns:
             self.xbt_df[col1] = date_elements[col1]
+        # exclude bad dates
+        self.xbt_df = self.xbt_df[self.xbt_df['year'] != 0]
     
     def filter_obs(self, key, value):
         subset_df = self.xbt_df 
@@ -105,7 +107,9 @@ class XbtDataset():
         cruise_stats = {}
         cruise_id_list = self.cruises
         num_unknown_model = 0
+        num_no_model_data = 0
         num_unknown_manufacturer = 0
+        num_no_manufacturer_data = 0
         for cid in cruise_id_list:
             cruise_data = {}
             cruise_obs = self.filter_obs(KEY_DICT['CRUISE'], cid)
@@ -116,16 +120,24 @@ class XbtDataset():
             cruise_data['num_unknown_model'] = cruise_obs.num_unknown_model
             if cruise_data['num_unknown_model'] > 0:
                 num_unknown_model += 1
+            if cruise_data['num_unknown_model'] == cruise_data['num_obs']:
+                num_no_model_data += 1
             
             cruise_data['manufacturers'] = list(cruise_obs.models)
             cruise_data['num_manufacturers'] = len(cruise_data['manufacturers'])
             cruise_data['num_unknown_manufacturer'] = cruise_obs.num_unknown_manufacturer
             if cruise_data['num_unknown_manufacturer'] > 0:
                 num_unknown_manufacturer += 1
+            if cruise_data['num_unknown_manufacturer'] == cruise_data['num_obs']:
+                num_no_manufacturer_data += 1
             
             cruise_stats[cid] = cruise_data
         self.cruise_stats = pandas.DataFrame.from_dict(cruise_stats, orient='index')
-        return self.cruise_stats, num_unknown_model, num_unknown_manufacturer
+        return (self.cruise_stats, 
+                num_unknown_model, 
+                num_no_model_data, 
+                num_unknown_manufacturer, 
+                num_no_manufacturer_data)
     
     @property
     def shape(self):
