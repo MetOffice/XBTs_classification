@@ -4,6 +4,8 @@ import pandas
 import functools
 import datetime
 import dask.dataframe
+import numpy
+import sklearn.preprocessing
 
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
 
@@ -54,6 +56,72 @@ def get_year(dt_str):
         day = 0
     return year, month, day
 
+def normalise_lat(feature_lat):
+    encoder = sklearn.preprocessing.MinMaxScaler()
+    encoder.data_min_ = -90.0
+    encoder.data_max_ = 90.0
+    ml_feature = encoder.transform(feature_lat)
+    return (encoder, ml_feature)
+
+
+def normalise_lon(feature_lon):
+    encoder = sklearn.preprocessing.MinMaxScaler()
+    encoder.data_min_ = -180.0
+    encoder.data_max_ = 180.0
+    ml_feature = encoder.transform(feature_lon)
+
+def get_cat_ml_feature(cat_feature):
+    encoder = sklearn.preprocessing.OneHotEncoder()
+    encoder.fit(cat_feature)
+    ml_feature = encoder.transform(cat_feature).toarray()
+    return (encoder, ml_feature)
+
+def get_ord_ml_feature(ord_feature):
+    encoder = sklearn.preprocessing.OrdinalEncoder()
+    encoder.fit(ord_feature)
+    ml_feature = encoder.transform(ord_feature)
+    return (encoder, ml_feature)
+
+def get_num_ml_feature(numerical_feature):
+    encoder = sklearn.preprocessing.StandardScaler()
+    encoder.fit(numerical_feature)
+    ml_feature = encoder.transform(numerical_feature)
+    return (encoder, ml_feature)
+
+def get_minmaxfixed_ml_feature(data_min, data_max, minmax_feature):
+    encoder = sklearn.preprocessing.MinMaxScaler()
+    encoder.fit(minmax_feature)
+    encoder.data_min_ = data_min
+    encoder.data_max_ = data_max
+    ml_feature = encoder.transform(minmax_feature)
+    return (encoder, ml_feature)
+
+def get_minmax_ml_feature(minmax_feature):
+    encoder = sklearn.preprocessing.MinMaxScaler()
+    encoder.fit(minmax_feature)
+    ml_feature = encoder.transform(minmax_feature)
+    return (encoder, ml_feature)
+
+
+CATEGORICAL_FEATURES = ['country', 'institute', 'platform', 'cruise_number', 
+                        'instrument', 'temperature_quality_flag', 'model', 
+                        'manufacturer',
+                       ]
+ORDINAL_FEATURES = ['year']
+MINMAX_FEATURES = []
+NORMAL_DIST_FEATURES = []
+CUSTOM_FEATURES = ['lat', 'lon']
+
+FEATURE_PROCESSORS = {}
+FEATURE_PROCESSORS.update({f1: get_cat_ml_feature for f1 in CATEGORICAL_FEATURES})
+FEATURE_PROCESSORS.update({f1: get_ord_ml_feature for f1 in ORDINAL_FEATURES})
+FEATURE_PROCESSORS.update({f1: get_minmax_ml_feature for f1 in MINMAX_FEATURES})
+FEATURE_PROCESSORS.update({f1: get_num_ml_feature for f1 in NORMAL_DIST_FEATURES})
+FEATURE_PROCESSORS.update({'lat': functools.partial(get_minmaxfixed_ml_feature, -90.0, 90.0),
+                           'lon': functools.partial(get_minmaxfixed_ml_feature, -180.0, 180.0),
+                           'max_depth': functools.partial(get_minmaxfixed_ml_feature, 0.0, 2000.0),
+                          })
+
 class XbtDataset():
     def __init__(self, directory, year_range, df=None, use_dask=False):
         self._use_dask = use_dask
@@ -84,6 +152,8 @@ class XbtDataset():
             self.xbt_df[col1] = date_elements[col1]
         # exclude bad dates
         self.xbt_df = self.xbt_df[self.xbt_df['year'] != 0]
+        for feature1 in CATEGORICAL_FEATURES:
+            self.xbt_df[feature1] = self.xbt_df[feature1].astype('category')
     
     def filter_obs(self, key, value):
         subset_df = self.xbt_df 
@@ -101,6 +171,10 @@ class XbtDataset():
                 subset_df = subset_df[subset_df[key].apply(lambda x: value in x)]
             except TypeError:
                 subset_df = subset_df[subset_df[key] == value]
+        return XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
+    
+    def filter_features(self, feature_list):
+        subset_df = self.xbt_df[feature_list]     
         return XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
     
     def get_cruise_stats(self):
@@ -246,6 +320,18 @@ class XbtDataset():
         return None
         
         
+    def get_ml_dataset(self, features):
+        ml_features = []
+        encoders = []
+        for f1 in features:
+            try: 
+                (encoder, mlf1) = FEATURE_PROCESSORS[f1](self.xbt_df[[f1]])
+            except KeyError:
+                raise RuntimeError(f'Attempting to preprocess unknown feature {f1}')
+            ml_features += [mlf1]
+            encoders += [encoder]
+        ml_ds = numpy.concatenate(ml_features, axis=1)
+        return (ml_ds, encoders)
 
 
 def get_data_stats(file_path, year):
