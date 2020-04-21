@@ -22,7 +22,8 @@ def get_model_by_date(model1, model2, date_threshold, obs_date):
 
 TSK_countries = ['JAPAN', 'CHINA', 'TAIWAN', 'KOREA']
 MANUFACTURERS = ['SIPPICAN', 'TSK - TSURUMI SEIKI Co.']
-IMETA_VALUES = { 'SIPPICAN' : { 'depths': [360.0,600.0,1000.0,1350.0,2300.0],
+XBT_MAX_DEPTH = 2000.0
+IMETA_VALUES = { 'SIPPICAN' : { 'depths': [360.0,600.0,1000.0,1350.0,2000.0],
                                'models': [functools.partial(get_model_by_date, 'T4','T10', datetime.datetime(year=1993, month=1, day=1)),
                                           lambda x: 'T4',
                                           functools.partial(get_model_by_date, 'T7','DEEP BLUE', datetime.datetime(year=1997, month=1, day=1)),
@@ -30,7 +31,7 @@ IMETA_VALUES = { 'SIPPICAN' : { 'depths': [360.0,600.0,1000.0,1350.0,2300.0],
                                           lambda x: 'T5',
                                          ],
                               },
-                'TSK - TSURUMI SEIKI Co.': {'depths': [600.0, 1000.0, 2300.0],
+                'TSK - TSURUMI SEIKI Co.': {'depths': [600.0, 1000.0, 2000.0],
                                             'models':  [functools.partial(get_model_by_date, 'T4','T6', datetime.datetime(year=1995, month=1, day=1)),
                                                         functools.partial(get_model_by_date, 'T5','T7', datetime.datetime(year=1979, month=1, day=1)),
                                                         lambda x: 'T5',
