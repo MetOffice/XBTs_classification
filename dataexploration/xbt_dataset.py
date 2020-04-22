@@ -159,11 +159,11 @@ class XbtDataset():
         subset_df = self.xbt_df 
         if key == 'labelled':
             if value == 'labelled':
-                subset_df = self.xbt_df[-self.xbt_df.instrument.apply(
-                    functools.partial(check_value_found, UNKNOWN_STR))] 
+                print('extracting labelled')
+                subset_df = self.xbt_df[self.xbt_df.instrument.apply(lambda x: not check_value_found(UNKNOWN_STR, x))] 
             elif value == 'unlabelled':
-                subset_df = self.xbt_df[self.xbt_df.instrument.apply(
-                    functools.partial(check_value_found, UNKNOWN_STR))]    
+                print('extracting unlabelled')
+                subset_df = self.xbt_df[self.xbt_df.instrument.apply(lambda x: check_value_found(UNKNOWN_STR, x))] 
             elif value == 'all':
                 subset_df = self.xbt_df
         else:
