@@ -320,10 +320,10 @@ class XbtDataset():
         return None
         
         
-    def get_ml_dataset(self, features):
+    def get_ml_dataset(self):
         ml_features = []
         encoders = []
-        for f1 in features:
+        for f1 in self.xbt_df.columns:
             try: 
                 (encoder, mlf1) = FEATURE_PROCESSORS[f1](self.xbt_df[[f1]])
             except KeyError:
