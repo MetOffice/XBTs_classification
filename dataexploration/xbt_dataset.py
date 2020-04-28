@@ -111,6 +111,9 @@ ORDINAL_FEATURES = ['year']
 MINMAX_FEATURES = []
 NORMAL_DIST_FEATURES = []
 CUSTOM_FEATURES = ['lat', 'lon']
+XBT_CONVERTERS = {'temperature_profile': eval,
+                  'depth_profile': eval,
+                 }
 
 FEATURE_PROCESSORS = {}
 FEATURE_PROCESSORS.update({f1: get_cat_ml_feature for f1 in CATEGORICAL_FEATURES})
@@ -122,13 +125,47 @@ FEATURE_PROCESSORS.update({'lat': functools.partial(get_minmaxfixed_ml_feature, 
                            'max_depth': functools.partial(get_minmaxfixed_ml_feature, 0.0, 2000.0),
                           })
 
+def read_csv(fname, converters=None):
+    return pandas.read_csv(fname,
+                          converters=converters,
+                          ).drop(EXCLUDE_LIST, axis=1)
+
+def do_concat(df_list, axis=1, ignore_index=True):
+    xbt_df = pandas.concat(df_list, ignore_index=ignore_index)
+    for feature1 in CATEGORICAL_FEATURES:
+                xbt_df[feature1] = xbt_df[feature1].astype('category') 
+    return xbt_df
+
+
+def do_preprocessing(xbt_df):
+    # Model and manufacturer are stored in the CSV file as a single string called "instrument type", separating into 
+    # seprate columns for learning these separately 
+    xbt_df['model'] = xbt_df.instrument.apply(get_model)
+    xbt_df['manufacturer'] = xbt_df.instrument.apply(get_manufacturer)
+    date_columns = ['year','month','day']
+    date_elements = pandas.DataFrame(list(xbt_df.date.apply(str).apply(get_year)), columns=date_columns)
+    for col1 in date_columns:
+        xbt_df[col1] = date_elements[col1]
+    # exclude bad dates
+    xbt_df = xbt_df[xbt_df['year'] != 0]
+    # exclude bad depths
+    xbt_df = xbt_df[xbt_df['max_depth'] < 2000.0]
+    xbt_df = xbt_df[xbt_df['max_depth'] > 0.0]
+
+    return xbt_df
+
+
 class XbtDataset():
     def __init__(self, directory, year_range, df=None, use_dask=False):
         self._use_dask = use_dask
         if self._use_dask:
-            self._read_func = dask.dataframe.read_csv
+            self._read_func = dask.delayed(read_csv)
+            self._preproc_func = dask.delayed(do_preprocessing)
+            self._concat_func = dask.delayed(do_concat)
         else:
-            self._read_func = pandas.read_csv
+            self._read_func = read_csv
+            self._preproc_func = do_preprocessing
+            self._concat_func = do_concat
         self.directory = directory
         self.year_range = year_range
         self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(year_range[0], year_range[1])]
@@ -138,22 +175,9 @@ class XbtDataset():
 
     def _load_data(self):
         
-        self.xbt_df = pandas.concat((self._read_func(year_csv_path).drop(EXCLUDE_LIST, axis=1) 
-                                     for year_csv_path in self.dataset_files),
-                                    ignore_index=True)
-        
-        # Model and manufacturer are stored in the CSV file as a single string called "instrument type", separating into 
-        # seprate columns for learning these separately 
-        self.xbt_df['model'] = self.xbt_df.instrument.apply(get_model)
-        self.xbt_df['manufacturer'] = self.xbt_df.instrument.apply(get_manufacturer)
-        date_columns = ['year','month','day']
-        date_elements = pandas.DataFrame(list(self.xbt_df.date.apply(str).apply(get_year)), columns=date_columns)
-        for col1 in date_columns:
-            self.xbt_df[col1] = date_elements[col1]
-        # exclude bad dates
-        self.xbt_df = self.xbt_df[self.xbt_df['year'] != 0]
-        for feature1 in CATEGORICAL_FEATURES:
-            self.xbt_df[feature1] = self.xbt_df[feature1].astype('category')
+        df_in_list = [self._read_func(year_csv_path) for year_csv_path in self.dataset_files]
+        df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
+        self.xbt_df = self._concat_func(df_processed)
     
     def filter_obs(self, key, value):
         subset_df = self.xbt_df 
