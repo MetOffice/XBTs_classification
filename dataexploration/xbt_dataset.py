@@ -201,6 +201,35 @@ class XbtDataset():
         subset_df = self.xbt_df[feature_list]     
         return XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
     
+    def train_test_split(self, fraction=0.8, random_state=None):
+        if random_seed:
+            xbt_df_train = self.xbt_df.sample(frac=fraction, random_state=random_state)
+        else:
+            xbt_df_train = self.xbt_df.sample(frac=fraction)
+        xbt_df_test = self.xbt_df.drop(xbt_train.index)
+        xbt_train = XbtDataset(year_range=self.year_range, directory=self.directory, df = xbt_df_train)
+        xbt_test = XbtDataset(year_range=self.year_range, directory=self.directory, df = xbt_df_test)
+        return (xbt_train, xbt_test)
+            
+        
+    def get_ml_dataset(self):
+        ml_features = {}
+        encoders = {}
+        column_indices = {}
+        column_start = 0
+        for f1 in self.xbt_df.columns:
+            try: 
+                (encoder, mlf1) = FEATURE_PROCESSORS[f1](self.xbt_df[[f1]])
+            except KeyError:
+                raise RuntimeError(f'Attempting to preprocess unknown feature {f1}')
+            ml_features[f1] = mlf1
+            encoders[f1] = encoder
+            column_indices[f1] = column_start
+            column_start += mlf1.shape[1]
+        ml_ds = numpy.concatenate([v1 for k1,v1 in ml_features.items()], axis=1)
+        return (ml_ds, encoders, ml_features, column_indices)
+    
+    
     def get_cruise_stats(self):
         cruise_stats = {}
         cruise_id_list = self.cruises
@@ -343,20 +372,6 @@ class XbtDataset():
             return getattr(self.xbt_df, key)
         return None
         
-        
-    def get_ml_dataset(self):
-        ml_features = []
-        encoders = []
-        for f1 in self.xbt_df.columns:
-            try: 
-                (encoder, mlf1) = FEATURE_PROCESSORS[f1](self.xbt_df[[f1]])
-            except KeyError:
-                raise RuntimeError(f'Attempting to preprocess unknown feature {f1}')
-            ml_features += [mlf1]
-            encoders += [encoder]
-        ml_ds = numpy.concatenate(ml_features, axis=1)
-        return (ml_ds, encoders)
-
 
 def get_data_stats(file_path, year):
     print(f'processing year {year} from file {file_path}')
