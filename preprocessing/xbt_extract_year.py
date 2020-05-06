@@ -36,19 +36,34 @@ def process_xbt_file(path_nc, out_path):
 
     nc_data_dict = {}
 
+    #TODO: split into several smaller functions for parallelisation.
     nc_data_dict['country'] = [_stringify(s1) for s1 in ds_nc1.variables['country']]
     nc_data_dict['lat'] = [float(s1) for s1 in ds_nc1.variables['lat']]
     nc_data_dict['lon'] = [float(s1) for s1 in ds_nc1.variables['lon']]
     nc_data_dict['date'] = [str(s1) for s1 in ds_nc1.variables['date']]
+    #TODO: extract year, month and day
     nc_data_dict['institute'] = [_stringify(s1) for s1 in ds_nc1.variables['Institute']]
     nc_data_dict['platform'] = [_stringify(s1) for s1 in ds_nc1.variables['Platform']]
     nc_data_dict['cruise_number'] = [_stringify(s1) for s1 in ds_nc1.variables['WOD_cruise_identifier']]
+    
     z_pos = numpy.insert(numpy.cumsum(ds_nc1.variables['z_row_size'][:-1]),0,0)
+    nc_data_dict['instrument'] = [_stringify(s1) for s1 in ds_nc1.variables['Temperature_Instrument']]
+    #TODO: add model and manufacturer
+    
+    nc_data_dict['temperature_profile'] = [ds_nc1.variables['Temperature'][z_pos1:z_pos1+zl1].data.tolist() for (z_pos1,zl1) in zip(z_pos,ds_nc1.variables['Temperature_row_size'])]
+    nc_data_dict['temperature_quality_flag'] = [ds_nc1.variables['Temperature_IQUODflag'][z_pos1:z_pos1+zl1] for (z_pos1,zl1) in zip(z_pos,ds_nc1.variables['Temperature_row_size'])]
+    
     nc_data_dict['depth_profile'] = [ds_nc1.variables['z'][z_pos1:z_pos1+zl1].data.tolist() for (z_pos1,zl1) in zip(z_pos,ds_nc1.variables['z_row_size'])]
     nc_data_dict['max_depth'] = [dp1[-1] for dp1 in nc_data_dict['depth_profile']]
-    nc_data_dict['temperature_profile'] = [ds_nc1.variables['Temperature'][z_pos1:z_pos1+zl1].data.tolist() for (z_pos1,zl1) in zip(z_pos,ds_nc1.variables['Temperature_row_size'])]
-    nc_data_dict['instrument'] = [_stringify(s1) for s1 in ds_nc1.variables['Temperature_Instrument']]
-    nc_data_dict['temperature_quality_flag'] = [ds_nc1.variables['Temperature_IQUODflag'][z_pos1:z_pos1+zl1] for (z_pos1,zl1) in zip(z_pos,ds_nc1.variables['Temperature_row_size'])]
+    nc_data_dict['depth_quality_flag'] = [ds_nc1.variables['z_IQUODflag'][z_pos1:z_pos1+zl1] for (z_pos1,zl1) in zip(z_pos,ds_nc1.variables['z_row_size'])]
+    
+    lut1 = {-9: 0, 1: 1}
+    try:
+        nc_data_dict['imeta_applied'] = [lut1[i1] for i1 in ds_nc1.variables['Temperature_Instrument_intelligentmetadata'][:].data]
+    except KeyError:
+        # if no imeta has been applied, the Temperature_Instrument_intelligentmetadata variable may not be present
+        # in which case, create an array which is all zeroes, to represent no imeta applied. 
+        nc_data_dict['imeta_applied'] = [0] * ds_nc1.variables['Temperature_Instrument'].shape[0]
     
     # add depth equation
     nc_data_dict['id'] = [int(s1) for s1 in ds_nc1.variables['wod_unique_cast']]
