@@ -103,14 +103,22 @@ def get_minmax_ml_feature(minmax_feature):
     return (encoder, ml_feature)
 
 
-CATEGORICAL_FEATURES = ['country', 'institute', 'platform', 'cruise_number', 
-                        'instrument', 'temperature_quality_flag', 'model', 
-                        'manufacturer',
-                       ]
+CATEGORICAL_LOADED_FEATURES = [
+    'country', 'institute', 'platform', 'cruise_number', 
+    'instrument', 'imeta_applied'
+]
+CATEGORICAL_GENERATED_FEATURES = [
+    'model', 'manufacturer',
+]
+CATEGORICAL_FEATURES = CATEGORICAL_LOADED_FEATURES + CATEGORICAL_GENERATED_FEATURES
+PROFILE_FEATURES = ['temperature_profile', 'depth_profile']
+QUALITY_FLAG_FEATURES = ['temperature_quality_flag', 'depth_quality_flag']
+ID_FEATURES = ['id']
 ORDINAL_FEATURES = ['year']
-MINMAX_FEATURES = []
+MINMAX_FEATURES = ['max_depth']
 NORMAL_DIST_FEATURES = []
 CUSTOM_FEATURES = ['lat', 'lon']
+OTHER_FEATURES = ['date']
 XBT_CONVERTERS = {'temperature_profile': eval,
                   'depth_profile': eval,
                  }
@@ -125,10 +133,14 @@ FEATURE_PROCESSORS.update({'lat': functools.partial(get_minmaxfixed_ml_feature, 
                            'max_depth': functools.partial(get_minmaxfixed_ml_feature, 0.0, 2000.0),
                           })
 
-def read_csv(fname, converters=None):
+
+
+def read_csv(fname, features_to_load, converters=None):
+    print(f'reading {fname}')
     return pandas.read_csv(fname,
-                          converters=converters,
-                          ).drop(EXCLUDE_LIST, axis=1)
+                           converters=converters,
+                           usecols=features_to_load
+                          )
 
 def do_concat(df_list, axis=1, ignore_index=True):
     xbt_df = pandas.concat(df_list, ignore_index=ignore_index)
@@ -156,8 +168,15 @@ def do_preprocessing(xbt_df):
 
 
 class XbtDataset():
-    def __init__(self, directory, year_range, df=None, use_dask=False):
+    def __init__(self, directory, year_range, df=None, use_dask=False, load_profiles=False, load_quality_flags=False):
         self._use_dask = use_dask
+        self._load_profiles = load_profiles
+        self._load_quality_flags = load_quality_flags
+        self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES
+        if self._load_profiles:
+            self.features_to_load += PROFILE_FEATURES
+        if self._load_quality_flags:
+            self.features_to_load += QUALITY_FLAG_FEATURES
         if self._use_dask:
             self._read_func = dask.delayed(read_csv)
             self._preproc_func = dask.delayed(do_preprocessing)
@@ -174,8 +193,8 @@ class XbtDataset():
             self._load_data() 
 
     def _load_data(self):
-        
-        df_in_list = [self._read_func(year_csv_path) for year_csv_path in self.dataset_files]
+        print(f'load the following features: {self.features_to_load}')
+        df_in_list = [self._read_func(year_csv_path, self.features_to_load) for year_csv_path in self.dataset_files]
         df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
         self.xbt_df = self._concat_func(df_processed)
     
@@ -185,9 +204,15 @@ class XbtDataset():
             if value == 'labelled':
                 print('extracting labelled')
                 subset_df = self.xbt_df[self.xbt_df.instrument.apply(lambda x: not check_value_found(UNKNOWN_STR, x))] 
+                subset_df = subset_df[subset_df.imeta_applied == 0]
             elif value == 'unlabelled':
                 print('extracting unlabelled')
-                subset_df = self.xbt_df[self.xbt_df.instrument.apply(lambda x: check_value_found(UNKNOWN_STR, x))] 
+                subset_df1 = self.xbt_df[self.xbt_df.instrument.apply(lambda x: check_value_found(UNKNOWN_STR, x))] 
+                subset_df2 = self.xbt_df[self.xbt_df.imeta_applied == 1] 
+                subset_df = pandas.concat([subset_df1, subset_df2], axis=0)
+            elif value == 'imeta':
+                print('extracting profiles with intelligent metadata algorithm applied')
+                subset_df = self.xbt_df[self.xbt_df.imeta_applied == 1] 
             elif value == 'all':
                 subset_df = self.xbt_df
         else:
@@ -276,31 +301,44 @@ class XbtDataset():
     
     @property
     def unknown_model_dataset(self):
-        return self.xbt_df[self.xbt_df.model.apply(
-            functools.partial(check_value_found, UNKNOWN_STR))]        
+        imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 1]
+        no_imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 0]
+        other_obs = no_imeta_obs[no_imeta_obs.model.apply(lambda x: check_value_found(UNKNOWN_STR, x))]
+        subset_df = pandas.concat([imeta_obs, other_obs])
+        return XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
     
     @property
     def unknown_manufacturer_dataset(self):
-        return self.xbt_df[self.xbt_df.manufacturer.apply(
-            functools.partial(check_value_found, UNKNOWN_STR))]        
-
+        imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 1]
+        no_imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 0]
+        other_obs = no_imeta_obs[no_imeta_obs.manufacturer.apply(lambda x: check_value_found(UNKNOWN_STR, x))]
+        subset_df = pandas.concat([imeta_obs, other_obs])
+        return XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
+                                
     @property
     def known_model_dataset(self):
-        return self.xbt_df[-self.xbt_df.model.apply(
-            functools.partial(check_value_found, UNKNOWN_STR))]        
+        no_imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 0]
+        subset_df = no_imeta_obs[no_imeta_obs.model.apply(lambda x: not check_value_found(UNKNOWN_STR, x))]
+        return XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
     
     @property
     def known_manufacturer_dataset(self):
-        return self.xbt_df[-self.xbt_df.manufacturer.apply(
-            functools.partial(check_value_found, UNKNOWN_STR))]        
+        no_imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 0]
+        subset_df = no_imeta_obs[no_imeta_obs.manufacturer.apply(lambda x: not check_value_found(UNKNOWN_STR, x))]
+        return XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
 
     @property
     def num_unknown_model(self):
-        return self.unknown_model_dataset.shape[0]
+        imeta_num = sum(self.xbt_df.imeta_applied)
+        other_unknown = sum(self.xbt_df[self.xbt_df.imeta_applied == 0].model.apply(functools.partial(check_value_found, UNKNOWN_STR)))
+        return imeta_num + other_unknown
+    
     
     @property
     def num_unknown_manufacturer(self):
-        return self.unknown_manufacturer_dataset.shape[0]
+        imeta_num = sum(self.xbt_df.imeta_applied)
+        other_unknown = sum(self.xbt_df[self.xbt_df.imeta_applied == 0].manufacturer.apply(functools.partial(check_value_found, UNKNOWN_STR)))
+        return imeta_num + other_unknown
     
     @property
     def instruments_by_platform(self):
