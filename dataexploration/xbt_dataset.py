@@ -136,7 +136,7 @@ FEATURE_PROCESSORS.update({'lat': functools.partial(get_minmaxfixed_ml_feature, 
 
 
 def read_csv(fname, features_to_load, converters=None):
-    print(f'reading {fname}')
+#     print(f'reading {fname}')
     return pandas.read_csv(fname,
                            converters=converters,
                            usecols=features_to_load
@@ -330,14 +330,16 @@ class XbtDataset():
     @property
     def num_unknown_model(self):
         imeta_num = sum(self.xbt_df.imeta_applied)
-        other_unknown = sum(self.xbt_df[self.xbt_df.imeta_applied == 0].model.apply(functools.partial(check_value_found, UNKNOWN_STR)))
+        no_imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 0]
+        other_unknown = sum(no_imeta_obs.model.apply(lambda x: check_value_found(UNKNOWN_STR, x)))
         return imeta_num + other_unknown
     
     
     @property
     def num_unknown_manufacturer(self):
         imeta_num = sum(self.xbt_df.imeta_applied)
-        other_unknown = sum(self.xbt_df[self.xbt_df.imeta_applied == 0].manufacturer.apply(functools.partial(check_value_found, UNKNOWN_STR)))
+        no_imeta_obs = self.xbt_df[self.xbt_df.imeta_applied == 0]
+        other_unknown = sum(no_imeta_obs.manufacturer.apply(lambda x: check_value_found(UNKNOWN_STR, x)))
         return imeta_num + other_unknown
     
     @property
