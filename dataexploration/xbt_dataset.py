@@ -44,6 +44,9 @@ def check_value_found(ref, value):
         return True
     return False
 
+def check_cat_value_allowed(allowed, value):
+    return value in allowed
+
 def get_year(dt_str):
     try:
         dt1 = datetime.datetime.strptime(dt_str,'%Y%m%d')
@@ -79,6 +82,7 @@ def normalise_lon(feature_lon, do_transform=True):
 def get_cat_ml_feature(cat_feature, do_transform=True):
     encoder = sklearn.preprocessing.OneHotEncoder(
         sparse=False,
+        handle_unknown='ignore' #we set this to ignore, so when applying the encoder we don't get an exception for missing values.
     )
     encoder.fit(cat_feature)
     if do_transform:
@@ -125,6 +129,11 @@ def get_minmax_ml_feature(minmax_feature, do_transform=True):
         ml_feature = None
     return (encoder, ml_feature)
 
+def cat_output_formatter(feature_name, feature_data, encoder):
+    feat_arr = encoder.transform(feature_data)
+    out_columns = [f'{feature_name}_{col_name}' for col_name in encoder.categories_[0]]
+    return pandas.DataFrame(feat_arr, columns=out_columns).astype(
+        dtype={f1: 'int8' for f1 in out_columns})
 
 CATEGORICAL_LOADED_FEATURES = [
     'country', 'institute', 'platform', 'cruise_number', 
@@ -157,6 +166,11 @@ FEATURE_PROCESSORS.update({'lat': functools.partial(get_minmaxfixed_ml_feature, 
                            'max_depth': functools.partial(get_minmaxfixed_ml_feature, 0.0, 2000.0),
                           })
 
+
+OUTPUT_FORMATTERS = {}
+OUTPUT_FORMATTERS.update({f1: cat_output_formatter for f1 in CATEGORICAL_FEATURES})
+
+
 TRAIN_SET_FEATURE = 'training_set'
 ML_EXCLUDE_LIST = ['date', 'id', 'month', 'day', TRAIN_SET_FEATURE]
 
@@ -170,7 +184,9 @@ def read_csv(fname, features_to_load, converters=None):
 def do_concat(df_list, axis=1, ignore_index=True):
     xbt_df = pandas.concat(df_list, ignore_index=ignore_index)
     for feature1 in CATEGORICAL_FEATURES:
-                xbt_df[feature1] = xbt_df[feature1].astype('category') 
+        xbt_df[feature1] = xbt_df[feature1].astype('category') 
+    for feature1 in ID_FEATURES:
+        xbt_df[feature1] = xbt_df[feature1].astype('int') 
     return xbt_df
 
 
@@ -215,6 +231,7 @@ class XbtDataset():
         self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(year_range[0], year_range[1]+1)]
         self.xbt_df = df
         self._feature_encoders = {}
+        self._output_formatters = OUTPUT_FORMATTERS
         if self.xbt_df is None:
             self._load_data() 
 
@@ -225,6 +242,20 @@ class XbtDataset():
         self.xbt_df = self._concat_func(df_processed)
     
     def filter_obs(self, key, value):
+        """
+        Filter the observation in the XBT dataset by returning only the rows 
+        (observations/profiles) where some element of metadata matches a given 
+        value. A common use is to filter by year, in which all profiles from a 
+        given year will be in the return XbtDataset object. In addition to the 
+        features present in the dataset, one can also use "labelled" as a key. 
+        In that case, the value parameter can be "labelled", "unlabelled" or 
+        "imeta". For labelled, all labelled data is return. This is data for 
+        which the iMeta algorithm has not been applied and which does not 
+        have the word "UNKNOWN" in the instrument value. Unlabelled data is 
+        all data which has either had the iMeta algorithm applied or which 
+        has the word "UNKNOWN" in the instrument value. "imeta" return all 
+        profiles which have had the imeta algorithm applied.
+        """
         subset_df = self.xbt_df 
         if key == 'labelled':
             if value == 'labelled':
@@ -249,14 +280,82 @@ class XbtDataset():
         filtered_dataset = XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
         filtered_dataset._feature_encoders = self._feature_encoders                
         return filtered_dataset
+
+    def filter_predictable(self, checkers):
+        """
+        In some cases, once we have trained a classifier, we can't apply it to the whole dataset because values in 
+        input features are not present in the labelled data, so the classifier cannot use these values. So this
+        function will return a subset of the data that can be used with a classifier that uses the features listed
+        in filter features as input.        
+        """
+        filter_values = self.xbt_df.apply(
+            lambda row1: numpy.all([checker_func1(row1[feat1]) for feat1, checker_func1 in checkers.items()]),
+            axis='columns',
+        )
+        subset = self.xbt_df[filter_values]
+        xbt_predictable = XbtDataset(
+            year_range=self.year_range, 
+            directory=self.directory, 
+            df = subset
+            )        
+        return xbt_predictable
+
+    @property
+    def feature_encoders(self):
+        return self._feature_encoders
     
+    def _get_features_to_process(self):
+        features_to_process = [feature1 for feature1 in self.xbt_df.columns 
+            if feature1 not in ML_EXCLUDE_LIST]
+        return features_to_process
+
+    def get_checkers(self):
+        # first ensure we have encoders
+        _ = self.get_ml_dataset(return_data=False)
+        checkers = {}
+        for f1 in CATEGORICAL_FEATURES:
+            checkers[f1] = functools.partial(check_cat_value_allowed, 
+                                              list(self.xbt_df[f1].unique()))
+        return checkers
+    
+    def output_data(self, out_path, add_ml_features=None):
+        out_df = self.xbt_df
+        for feat1 in add_ml_features:
+            try:
+                out_df = out_df.join(
+                    self._output_formatters[feat1](
+                        feat1, out_df[[feat1]], self._feature_encoders[feat1]))
+            except KeyError:
+                print(f'cannot output ML feature {feat1}, no formatter available.')
+        out_df.to_csv(out_path)
+    
+    def merge_features(self, other, features_to_merge, fill_values=None, encoders=None, output_formatters=None):
+        #TODO test in dev first, 
+        merged_df = self.xbt_df.merge(other.xbt_df[['id'] + features_to_merge], on='id', how='outer')
+        if fill_values:
+            for f1, fv1 in fill_values.items():
+                merged_df[f1][merged_df[f1].isna()] = fv1
+        self.xbt_df = merged_df
+        if encoders:
+            self._feature_encoders.update(encoders)
+        if output_formatters:
+            self._output_formatters.update(output_formatters)
+            
     def filter_features(self, feature_list):
+        """
+        Create a XbtDataset with a subset of the columns in this data.
+        """
         subset_df = self.xbt_df[feature_list] 
         filtered_dataset = XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
         filtered_dataset._feature_encoders = self._feature_encoders
         return filtered_dataset
     
     def train_test_split(self, train_fraction=0.8, random_state=None, split_on_feature=None, refresh=False):
+        """
+        Create a train/test split for this dataset, and add a column to the dataframe which is True if that row
+        is in the train set, and False if it is in the test set. If this column is already present, the existing
+        labels are used to split the data, unless efresh is True which causes a new split to be calculated.
+        """
         test_fraction = 1.0 - train_fraction
         if refresh or TRAIN_SET_FEATURE not in self.xbt_df.columns:
             opt_dict = {'frac': test_fraction}
@@ -279,19 +378,41 @@ class XbtDataset():
             
         
     def get_ml_dataset(self, refresh=False, return_data=True):
+        """
+        Get the data in the dataframe encoded for use bt a machine learning algorithm. This
+        is done on a per feature, and then the outputs are combined into a numpy array.
+        The enocding is delegated to the members of the FEATURE_PROCESSORS dictionary, which
+        contains an element for each data column. The essentially create a suitable scikit learn
+        object to encode the data e.g. OneHotEncoder for categorical data or MinMaxScaler for 
+        latitude and longitude.
+        
+        This function can also be used to just create encoders and not transform the data. This is useful
+        if you want consisent encoding of the data when looking at different subsets when not all values
+        in category may be present in the subset. This owrks because when a subset is created by any of the
+        subsetting functions (e.g. filter_obs or filter_features), the feature encoders dictionary is passed
+        to the new class. This means you will get the same encoding in the parent and child objects, so results
+        for different subsets can easily be compared.
+        
+        
+        """
         ml_features = {}
         if refresh:
             self._feature_encoders = {}
         column_indices = {}
         column_start = 0
-        features_to_process = [feature1 for feature1 in self.xbt_df.columns 
-                               if feature1 not in ML_EXCLUDE_LIST]
+        features_to_process = self._get_features_to_process()
+            
         for f1 in features_to_process:
             create_encoder = False
             try: 
-                mlf1 = self._feature_encoders[f1].transform(self.xbt_df[[f1]])
+                encoder_f1 = self._feature_encoders[f1]
+                if return_data:    
+                    mlf1 = encoder_f1.transform(self.xbt_df[[f1]])
+                else:
+                    mlf1 = None
             except KeyError:
                 create_encoder = True
+                mlf1 = None
             
             if create_encoder:
                 try: 
@@ -310,7 +431,6 @@ class XbtDataset():
         else:
             ml_ds = None
         return (ml_ds, self._feature_encoders, ml_features, column_indices)
-    
     
     def get_cruise_stats(self):
         cruise_stats = {}
