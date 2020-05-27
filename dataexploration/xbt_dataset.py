@@ -259,16 +259,13 @@ class XbtDataset():
         subset_df = self.xbt_df 
         if key == 'labelled':
             if value == 'labelled':
-                print('extracting labelled')
                 subset_df = self.xbt_df[self.xbt_df.instrument.apply(lambda x: not check_value_found(UNKNOWN_STR, x))] 
                 subset_df = subset_df[subset_df.imeta_applied == 0]
             elif value == 'unlabelled':
-                print('extracting unlabelled')
                 subset_df1 = self.xbt_df[self.xbt_df.instrument.apply(lambda x: check_value_found(UNKNOWN_STR, x))] 
                 subset_df2 = self.xbt_df[self.xbt_df.imeta_applied == 1] 
                 subset_df = pandas.concat([subset_df1, subset_df2], axis=0)
             elif value == 'imeta':
-                print('extracting profiles with intelligent metadata algorithm applied')
                 subset_df = self.xbt_df[self.xbt_df.imeta_applied == 1] 
             elif value == 'all':
                 subset_df = self.xbt_df
@@ -292,6 +289,9 @@ class XbtDataset():
             lambda row1: numpy.all([checker_func1(row1[feat1]) for feat1, checker_func1 in checkers.items()]),
             axis='columns',
         )
+                
+        self.xbt_df['classification_quality_flag'] = 0
+        self.xbt_df.loc[self.xbt_df.index[filter_values], 'classification_quality_flag'] = 1
         subset = self.xbt_df[filter_values]
         xbt_predictable = XbtDataset(
             year_range=self.year_range, 
@@ -360,7 +360,7 @@ class XbtDataset():
         if refresh or TRAIN_SET_FEATURE not in self.xbt_df.columns:
             opt_dict = {'frac': test_fraction}
             if random_state:
-                opt_dict['random_state'] = rand
+                opt_dict['random_state'] = random_state
             self.xbt_df[TRAIN_SET_FEATURE] = True
             if split_on_feature:
                 for year in range(*self.year_range):
