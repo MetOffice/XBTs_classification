@@ -2,7 +2,7 @@
 
 import numpy 
 import pandas 
-from sklearn.preprocessing import Imputer
+from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
 
@@ -76,7 +76,7 @@ class DataPreprocessor(object):
     def impute_numerical_nans(self,dataframe_1, dataframe_2, columns, strategy, axis, as_frame = True):
         """Fill Nans numerical input features"""
         
-        imputer = Imputer(strategy=strategy, axis=axis, verbose=0, copy=True)
+        imputer = SimpleImputer(strategy=strategy, verbose=0, copy=True)
         X_1, X_2 = dataframe_1[columns].values, dataframe_2[columns].values
         X_1 = imputer.fit_transform(X_1)
         X_2 = imputer.transform(X_2)

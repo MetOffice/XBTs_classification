@@ -19,6 +19,10 @@ class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, numpy.ndarray):
             return obj.tolist()
+        elif type(obj) in [numpy.int64, numpy.int32, numpy.int16, numpy.int8]:
+            return int(obj)
+        elif type(obj) in [numpy.float64, numpy.float32]:
+            return float(obj)
         return json.JSONEncoder.default(self, obj)
 
 class ClassificationExperiment(object):
@@ -75,7 +79,7 @@ class ClassificationExperiment(object):
         """Read operations to be applied, call the necessary modules and functions. Print relevant information if diagnostic enabled"""
         
         operations = self.dictionary['operations']
-        for key, operation in operations.iteritems():
+        for key, operation in operations.items():
             
             module_name = operation['module']
             function_name = operation['function']
@@ -104,11 +108,11 @@ class ClassificationExperiment(object):
         
         temp_frame = pandas.concat([self.train_set,self.test_set])
         encoder = LabelEncoder()
-        
         self.output_maps = {}
         for output_target in self.dictionary['output_features']:
             encoder.fit(temp_frame[output_target])
-            encoder_name_mapping = dict(zip(encoder.transform(encoder.classes_), encoder.classes_,))
+            encoder_name_mapping = {int(k1): v1 for k1,v1 in zip(encoder.transform(encoder.classes_), encoder.classes_,)}
+#             encoder_name_mapping = dict(zip(encoder.transform(encoder.classes_), encoder.classes_,))
             self.output_maps[output_target] = encoder_name_mapping
 
     def imputation(self):
@@ -167,8 +171,8 @@ class ClassificationExperiment(object):
         grid_search_parameters = self.dictionary['tuning']
         grid_search_parameters['estimator'] = learner
 
-        for key, item in grid_search_parameters['param_grid'].iteritems():
-            if isinstance(item, unicode):
+        for key, item in grid_search_parameters['param_grid'].items():
+            if isinstance(item, str):
                 grid_search_parameters['param_grid'][key] = ast.literal_eval(item)
         print('Initializing grid search')
         grid_search = GridSearchCV(**grid_search_parameters)
@@ -196,9 +200,11 @@ class ClassificationExperiment(object):
             classification_result['recall'] = classification_recall_score
             classification_result['rescale_all'] = self.dictionary['rescale_all']
             classification_result['input_features'] = self.dictionary['input_features']
-            classification_result['applied_operations'] = self.dictionary['operations'].keys()
+            classification_result['applied_operations'] = list(self.dictionary['operations'].keys())
             classification_result['best_hyperparameters'] = grid_search.best_params_
              
+#             import pdb
+#             pdb.set_trace()
             self.generate_results(output_target, out_path, learner_class_name, sub_directory_name, grid_search.cv_results_, classification_result, year)
              
                         
