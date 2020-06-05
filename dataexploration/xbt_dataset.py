@@ -241,7 +241,88 @@ class XbtDataset():
         df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
         self.xbt_df = self._concat_func(df_processed)
     
-    def filter_obs(self, key, value):
+    def _get_subset_df(self, filters, mode='include', check_type='match_subset'):
+        included_in_subset = True
+        xbt_df = self.xbt_df
+        filter_outputs = []
+        for key, value in filters.items():
+            if key == 'labelled':
+                if value == 'labelled':
+                    check1 = (xbt_df['imeta_applied'] == 0 & 
+                                              ~xbt_df['instrument'].apply(functools.partial(check_value_found,'UNKNOWN') ) )
+                        
+                        
+                elif value == 'unlabelled':
+                    check1 = (xbt_df['imeta_applied'] == 1 |  
+                                          xbt_df['instrument'].apply(functools.partial(check_value_found,'UNKNOWN') ))
+                                         
+                elif value == 'imeta':
+                    check1 =  (xbt_df['imeta_applied'] == 1)
+            else:
+                if check_type == 'match_subset':
+                    try:
+                        check1 = xbt_df[key].apply(lambda x: value in x)
+                    except TypeError:
+                        check1 = (value == xbt_df[key])
+                elif check_type == 'in_filter_set':
+                    check1 = xbt_df[key].apply(lambda x: x in value)
+                              
+            filter_outputs += [check1]
+                              
+            included_in_subset = functools.reduce(lambda x,y: x & y, filter_outputs)
+            included_in_subset = included_in_subset.astype(bool)
+               
+            if mode == 'exclude':
+                included_in_subset = ~included_in_subset 
+        
+        subset_df = self.xbt_df[included_in_subset] 
+        return subset_df
+    
+    def _get_subset_df2(self, filters, mode='include', check_type='match_subset'):
+        def filter_func(filters, row1):
+            included_in_subset = True
+            for key, value in filters.items():
+                if key == 'labelled':
+                    if value == 'labelled':
+                        check1 = (row1['imeta_applied'] == 0 and 
+                                              not check_value_found('UNKNOWN', 
+                                                                    row1['instrument'])) 
+                elif value == 'unlabelled':
+                    check1 = (row1['imeta_applied'] == 1 or 
+                                          check_value_found('UNKNOWN', row1['instrument'])
+                                         )
+                elif value == 'imeta':
+                    check1 =  (row1['imeta_applied'] == 1)
+                else:
+                    if check_type == 'match_subset':
+                        try:
+                            check1 = (value in row1[key])
+                        except TypeError:
+                            check1 = (value == row1[key])
+                    elif check_type == 'in_filter_set':
+                        check1 = row1[key] in value
+                included_in_subset = included_in_subset and check1
+                
+            if mode == 'exclude':
+                return not included_in_subset 
+            return included_in_subset 
+        
+        subset_df = self.xbt_df[self.xbt_df.apply(functools.partial(filter_func, filters), 
+                                                 axis='columns')]    
+        return subset_df    
+    
+    def sample_feature_values(self, feature, fraction):
+        """
+        Get a sample of the unique values in a categorical feature. For example,
+        if the feature is cruise_number, the fraction is 0.1 and there are 100 
+        unique values in the feature cruise_number, you will get a list
+        with 10 values of cruise_number.
+        """
+        df_values = pandas.DataFrame(self.xbt_df[feature].unique(), columns=[feature])
+        sample_values = list(df_values.sample(frac=fraction)[feature])
+        return sample_values
+        
+    def filter_obs(self, filters, mode='include', check_type='match_subset'):
         """
         Filter the observation in the XBT dataset by returning only the rows 
         (observations/profiles) where some element of metadata matches a given 
@@ -255,25 +336,11 @@ class XbtDataset():
         all data which has either had the iMeta algorithm applied or which 
         has the word "UNKNOWN" in the instrument value. "imeta" return all 
         profiles which have had the imeta algorithm applied.
+        
+        values of mode: include, exclude
+        values of check_type: match_subset, in_filter_set
         """
-        subset_df = self.xbt_df 
-        if key == 'labelled':
-            if value == 'labelled':
-                subset_df = self.xbt_df[self.xbt_df.instrument.apply(lambda x: not check_value_found(UNKNOWN_STR, x))] 
-                subset_df = subset_df[subset_df.imeta_applied == 0]
-            elif value == 'unlabelled':
-                subset_df1 = self.xbt_df[self.xbt_df.instrument.apply(lambda x: check_value_found(UNKNOWN_STR, x))] 
-                subset_df2 = self.xbt_df[self.xbt_df.imeta_applied == 1] 
-                subset_df = pandas.concat([subset_df1, subset_df2], axis=0)
-            elif value == 'imeta':
-                subset_df = self.xbt_df[self.xbt_df.imeta_applied == 1] 
-            elif value == 'all':
-                subset_df = self.xbt_df
-        else:
-            try:
-                subset_df = subset_df[subset_df[key].apply(lambda x: value in x)]
-            except TypeError:
-                subset_df = subset_df[subset_df[key] == value]
+        subset_df = self._get_subset_df(filters, mode, check_type)
         filtered_dataset = XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
         filtered_dataset._feature_encoders = self._feature_encoders                
         return filtered_dataset
@@ -350,26 +417,50 @@ class XbtDataset():
         filtered_dataset._feature_encoders = self._feature_encoders
         return filtered_dataset
     
-    def train_test_split(self, train_fraction=0.8, random_state=None, split_on_feature=None, refresh=False):
+    def train_test_split(self, train_fraction=0.8, random_state=None, features=None, refresh=False):
         """
         Create a train/test split for this dataset, and add a column to the dataframe which is True if that row
         is in the train set, and False if it is in the test set. If this column is already present, the existing
         labels are used to split the data, unless efresh is True which causes a new split to be calculated.
         """
+        
+        def construct_param_combos(xbt_df, features):
+            current_feature = features[0]
+            current_values = [f1 for f1 in xbt_df[current_feature].unique()]
+            if len(features) == 1:
+                return [[f1] for f1 in current_values]
+            feature_tuples = construct_param_combos(xbt_df, features[1:])
+            return [[f2] + f1 for f1 in feature_tuples for f2 in current_values]
+
         test_fraction = 1.0 - train_fraction
+        
+        
         if refresh or TRAIN_SET_FEATURE not in self.xbt_df.columns:
+            self.xbt_df[TRAIN_SET_FEATURE] = True
+            
             opt_dict = {'frac': test_fraction}
             if random_state:
                 opt_dict['random_state'] = random_state
-            self.xbt_df[TRAIN_SET_FEATURE] = True
-            if split_on_feature:
-                for year in range(*self.year_range):
-                    self.xbt_df.loc[self.xbt_df[self.xbt_df.year == year].sample(**opt_dict).index,TRAIN_SET_FEATURE] = False
+            
+            if features:
+                # if we want to ensure the split is even across features, we 
+                # have to process each combination of features sepratately. 
+                # One example might be splitting on year and instrument. We 
+                # then have to go through each combination of possible year 
+                # and instrument values, and sample from the subset of profiles 
+                # that matches that year and instrument.
+                for params in construct_param_combos(self.xbt_df, features):
+                    print(params)
+                    self.xbt_df.loc[self._get_subset_df(dict(zip(features, params))).sample(**opt_dict).index,TRAIN_SET_FEATURE] = False
+                
             else:
                 self.xbt_df.loc[self.xbt_df.sample(**opt_dict).index,TRAIN_SET_FEATURE] = False
             
+        # once we have a feature that divides the profiles into train and test, actally extract the 
+        # train and test profiles as XbtDataset objects.
         xbt_df_train = self.xbt_df[self.xbt_df[TRAIN_SET_FEATURE]]
         xbt_df_test = self.xbt_df[self.xbt_df[TRAIN_SET_FEATURE].apply(lambda x: not x)]
+        
         xbt_train = XbtDataset(year_range=self.year_range, directory=self.directory, df = xbt_df_train)
         xbt_train._feature_encoders = self._feature_encoders
         xbt_test = XbtDataset(year_range=self.year_range, directory=self.directory, df = xbt_df_test)
