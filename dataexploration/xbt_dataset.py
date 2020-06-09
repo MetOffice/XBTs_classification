@@ -175,7 +175,6 @@ TRAIN_SET_FEATURE = 'training_set'
 ML_EXCLUDE_LIST = ['date', 'id', 'month', 'day', TRAIN_SET_FEATURE]
 
 def read_csv(fname, features_to_load, converters=None):
-#     print(f'reading {fname}')
     return pandas.read_csv(fname,
                            converters=converters,
                            usecols=features_to_load
@@ -236,7 +235,6 @@ class XbtDataset():
             self._load_data() 
 
     def _load_data(self):
-        print(f'load the following features: {self.features_to_load}')
         df_in_list = [self._read_func(year_csv_path, self.features_to_load) for year_csv_path in self.dataset_files]
         df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
         self.xbt_df = self._concat_func(df_processed)
@@ -248,13 +246,13 @@ class XbtDataset():
         for key, value in filters.items():
             if key == 'labelled':
                 if value == 'labelled':
-                    check1 = (xbt_df['imeta_applied'] == 0 & 
-                                              ~xbt_df['instrument'].apply(functools.partial(check_value_found,'UNKNOWN') ) )
+                    check1 = ((xbt_df['imeta_applied'] == 0) & 
+                                              (~(xbt_df['instrument'].apply(functools.partial(check_value_found,'UNKNOWN') ).astype(bool))) )
                         
                         
                 elif value == 'unlabelled':
-                    check1 = (xbt_df['imeta_applied'] == 1 |  
-                                          xbt_df['instrument'].apply(functools.partial(check_value_found,'UNKNOWN') ))
+                    check1 = ((xbt_df['imeta_applied'] == 1) |  
+                                          xbt_df['instrument'].apply(functools.partial(check_value_found,'UNKNOWN') ).astype(bool))
                                          
                 elif value == 'imeta':
                     check1 =  (xbt_df['imeta_applied'] == 1)
@@ -267,7 +265,7 @@ class XbtDataset():
                 elif check_type == 'in_filter_set':
                     check1 = xbt_df[key].apply(lambda x: x in value)
                               
-            filter_outputs += [check1]
+            filter_outputs += [check1.astype(bool)]
                               
             included_in_subset = functools.reduce(lambda x,y: x & y, filter_outputs)
             included_in_subset = included_in_subset.astype(bool)
@@ -277,39 +275,6 @@ class XbtDataset():
         
         subset_df = self.xbt_df[included_in_subset] 
         return subset_df
-    
-    def _get_subset_df2(self, filters, mode='include', check_type='match_subset'):
-        def filter_func(filters, row1):
-            included_in_subset = True
-            for key, value in filters.items():
-                if key == 'labelled':
-                    if value == 'labelled':
-                        check1 = (row1['imeta_applied'] == 0 and 
-                                              not check_value_found('UNKNOWN', 
-                                                                    row1['instrument'])) 
-                elif value == 'unlabelled':
-                    check1 = (row1['imeta_applied'] == 1 or 
-                                          check_value_found('UNKNOWN', row1['instrument'])
-                                         )
-                elif value == 'imeta':
-                    check1 =  (row1['imeta_applied'] == 1)
-                else:
-                    if check_type == 'match_subset':
-                        try:
-                            check1 = (value in row1[key])
-                        except TypeError:
-                            check1 = (value == row1[key])
-                    elif check_type == 'in_filter_set':
-                        check1 = row1[key] in value
-                included_in_subset = included_in_subset and check1
-                
-            if mode == 'exclude':
-                return not included_in_subset 
-            return included_in_subset 
-        
-        subset_df = self.xbt_df[self.xbt_df.apply(functools.partial(filter_func, filters), 
-                                                 axis='columns')]    
-        return subset_df    
     
     def sample_feature_values(self, feature, fraction):
         """
@@ -450,7 +415,6 @@ class XbtDataset():
                 # and instrument values, and sample from the subset of profiles 
                 # that matches that year and instrument.
                 for params in construct_param_combos(self.xbt_df, features):
-                    print(params)
                     self.xbt_df.loc[self._get_subset_df(dict(zip(features, params))).sample(**opt_dict).index,TRAIN_SET_FEATURE] = False
                 
             else:
