@@ -382,7 +382,7 @@ class XbtDataset():
         filtered_dataset._feature_encoders = self._feature_encoders
         return filtered_dataset
     
-    def train_test_split(self, train_fraction=0.8, random_state=None, features=None, refresh=False):
+    def train_test_split(self, train_fraction=0.8, random_state=None, features=None, refresh=False, split_name=TRAIN_SET_FEATURE):
         """
         Create a train/test split for this dataset, and add a column to the dataframe which is True if that row
         is in the train set, and False if it is in the test set. If this column is already present, the existing
@@ -400,8 +400,8 @@ class XbtDataset():
         test_fraction = 1.0 - train_fraction
         
         
-        if refresh or TRAIN_SET_FEATURE not in self.xbt_df.columns:
-            self.xbt_df[TRAIN_SET_FEATURE] = True
+        if refresh or split_name not in self.xbt_df.columns:
+            self.xbt_df[split_name] = True
             
             opt_dict = {'frac': test_fraction}
             if random_state:
@@ -418,12 +418,13 @@ class XbtDataset():
                     self.xbt_df.loc[self._get_subset_df(dict(zip(features, params))).sample(**opt_dict).index,TRAIN_SET_FEATURE] = False
                 
             else:
-                self.xbt_df.loc[self.xbt_df.sample(**opt_dict).index,TRAIN_SET_FEATURE] = False
+                self.xbt_df.loc[self.xbt_df.sample(**opt_dict).index,split_name] = False
+            self.xbt_df[split_name] = self.xbt_df[split_name].astype(bool)
             
         # once we have a feature that divides the profiles into train and test, actally extract the 
         # train and test profiles as XbtDataset objects.
-        xbt_df_train = self.xbt_df[self.xbt_df[TRAIN_SET_FEATURE]]
-        xbt_df_test = self.xbt_df[self.xbt_df[TRAIN_SET_FEATURE].apply(lambda x: not x)]
+        xbt_df_train = self.xbt_df[self.xbt_df[split_name]]
+        xbt_df_test = self.xbt_df[~self.xbt_df[split_name]]
         
         xbt_train = XbtDataset(year_range=self.year_range, directory=self.directory, df = xbt_df_train)
         xbt_train._feature_encoders = self._feature_encoders
@@ -432,6 +433,28 @@ class XbtDataset():
         return (xbt_train, xbt_test)
             
         
+    def generate_random_folds(num_folds, fold_feature_name):
+        self.xbt_df[fold_feature_name] = numpy.round(numpy.random.random(xbt_labelled.shape[0])*num_folds) % num_folds
+        self.xbt_df[fold_feature_name] = xbt_labelled.xbt_df[fold_feature_name].astype(int)
+        
+    def generate_folds_by_feature(self, feature_name, num_folds, fold_feature_name):
+        """
+        This function generate folds for train/test splitting, but instead of just generating them at random,
+        it find all the unique values of particular features, divides the unique values into num_folds groups,
+        then labels all observations according to the number of the group where value of the feature for that
+        observation is in the group.
+        """
+        feature_values  = list(self.xbt_df[feature_name].unique())
+        num_values = len(feature_values)
+        df1 = pandas.DataFrame({feature_name : feature_values , 'fold' : (numpy.random.random_integers(low=0, high=num_folds-1, size=(num_values,))) })        
+        self.xbt_df[fold_feature_name] = 0
+        for ix1 in range(1,num_folds):
+            fvl1 = list(df1[df1['fold'] == ix1][feature_name])
+            self.xbt_df.loc[self.xbt_df[self.xbt_df[feature_name].apply(lambda x: x in fvl1)].index, fold_feature_name] = ix1
+    
+    def update_split_from_fold(split_feature, fold_feature, fold_num):
+        self.xbt_df[split_feature] = self.xbt_df[fold_feature_name] != fold_num
+    
     def get_ml_dataset(self, refresh=False, return_data=True):
         """
         Get the data in the dataframe encoded for use bt a machine learning algorithm. This
