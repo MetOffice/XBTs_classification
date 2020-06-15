@@ -7,12 +7,13 @@ import numpy
 import os
 import pandas
 import time
+import sklearn.metrics
+
 from preprocessing.data_preprocessing import  DataPreprocessor
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import recall_score
-from sklearn.model_selection import GridSearchCV
-from sklearn.preprocessing import LabelEncoder
 pandas.options.mode.chained_assignment = None
+
+import dataexploration.xbt_dataset
+from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
 class NumpyEncoder(json.JSONEncoder):
     """Encoder to print the result of tuning into a json file"""
@@ -29,144 +30,94 @@ class ClassificationExperiment(object):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
-    def __init__(self, train_file_name, test_file_name, json_descriptor):
-        self.train_file_name = train_file_name
-        self.test_file_name = test_file_name
+    def __init__(self, json_descriptor, data_dir, output_dir, results_dir):
+        self.data_dir = data_dir
+        self.output_dir = output_dir
+        self.results_dir = results_dir
         self.json_descriptor = json_descriptor
-        self.primary_keys = ['learner', 'input_features', 'output_features','operations','rescale_all', 'tuning']
-        self.dictionary = None
-        self.output_maps = None
-        self.preprocessor = None
-        self.train_set = None
-        self.test_set = None
+        self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split']
+        self.dataset = None
+        self.read_json_file()
         
+    def run_single_experiment(self):
+
+        print('loading dataset')
+        self.load_dataset()
+        # get train/test/unseen sets
+        print('generating splits')
+        X_dict, y_dict, df_dict = self.get_train_test_unseen_sets()
+            
+        # fit classifier
+        print('training classifier')
+        clf1 = self.train_classifier(X_dict['train'], y_dict['train'])
+        
+        # generate scores
+        print('generating metrics')
+        metrics_train = self.generate_metrics(clf1, df_dict['train'], 'train')        
+        metrics_test = self.generate_metrics(clf1, df_dict['test'], 'test')
+        exp_results = pandas.merge(metrics_train, metrics_test, on='year')
+        metrics_unseen = self.generate_metrics(clf1, df_dict['unseen'], 'unseen')
+        exp_results = exp_results.merge(metrics_unseen, on='year')
+        
+        # generate imeta
+        exp_results = exp_results.merge(self.score_imeta(df_dict['train'], 'train'), on='year')
+        exp_results = exp_results.merge(self.score_imeta(df_dict['test'], 'est'), on='year')
+        exp_results = exp_results.merge(self.score_imeta(df_dict['unseen'], 'unseen'), on='year')
+        
+        # TODO: run prediction on full dataset
+        # TODO: output predictions
+        return exp_results
+    
+                
+    def load_dataset(self):
+        """
+        create a XBTDataset
+        only load the specified input and target features, taken from the parameters JSON file
+        """
+        self.dataset = dataexploration.xbt_dataset.XbtDataset(self.data_dir, self.year_range)
+        self.xbt_labelled = self.dataset.filter_obs({'labelled': 'labelled'})
+        
+        # initialise the feature encoders on the labelled data
+        _ = self.xbt_labelled.get_ml_dataset(return_data=False)
+
         
     def read_json_file(self):
         """Open json descriptor file, load its content into a dictionary"""
         
         if not os.path.isfile(self.json_descriptor):
             raise ValueError('Missing json descriptor!')
-        else:
-            with open(self.json_descriptor) as json_data:
-                dictionary = json.load(json_data)
-                json_data.close()
-            self.dictionary_sanity_check(dictionary)
-
-    def dictionary_sanity_check(self, test_dictionary):
-        """Check that the input dictionary contains primary keys defined when the class is instantiated"""
-        
-        if set(test_dictionary.keys()) != set(self.primary_keys):
-            raise ValueError('Primary keys in json descriptor are wrong!')
-        else:
-            self.dictionary = test_dictionary
-        
-    def get_datasets(self):
-        """Load train and test datasets, determines useless features, features to be mapped to dummy and to integers"""
-        
-        init_dictionary = copy.deepcopy(self.dictionary['input_features'])
-        init_dictionary['train_dataset_name'] = self.train_file_name
-        init_dictionary['test_dataset_name'] = self.test_file_name
-        self.preprocessor = DataPreprocessor(**init_dictionary)
-        self.train_set, self.test_set = self.preprocessor.load_data(stack = False)
+        with open(self.json_descriptor) as json_data:
+            dictionary = json.load(json_data)
             
-    def remove_useless_features(self):
-        """Remove other features we would not be interested in"""
+        # Check that the input dictionary contains primary keys defined when the class is instantiated
+        for k1 in self.primary_keys:
+            if k1 not in dictionary.keys():
+                raise ValueError(f'Primary key {k1} in not found in json parameter descriptor!')
         
-        self.preprocessor.remove_useless_features(self.train_set)
-        self.preprocessor.remove_useless_features(self.test_set)
-                    
-    def apply_operations(self, diagnostic =  False):
-        """Read operations to be applied, call the necessary modules and functions. Print relevant information if diagnostic enabled"""
+        self.json_params = dictionary
+        self.year_range = (self.json_params['year_range'][0], self.json_params['year_range'][1])
+        self.input_features = self.json_params['input_features']
+        self.target_feature = self.json_params['output_feature']
+        self.test_fraction = self.json_params['split']['test_fraction']
+        self.train_fraction = 1.0 - self.test_fraction
+        self.unseen_fraction = self.json_params['split']['unseen_fraction']
+        self.unseen_feature = self.json_params['split']['unseen_feature']
+        self.balance_features = self.json_params['split']['balance_features']
         
-        operations = self.dictionary['operations']
-        for key, operation in operations.items():
-            
-            module_name = operation['module']
-            function_name = operation['function']
-            inputs = operation['inputs']
+        learner_dictionary = self.json_params['learner']
+        learner_module_name = learner_dictionary['module_name']
+        learner_class_name =  learner_dictionary['python_class']
+        learner_module = importlib.import_module(learner_module_name)
+        learner_class = getattr(learner_module, learner_class_name)
+        self.classifier_class = learner_class       
+        self.classifier_opts = {}
+        self._tuning_dict = self.json_params['tuning']
 
-            if diagnostic:
-                print('operation: '+key)
-                print('module: '+ module_name)
-                print('function: '+ function_name)
-                print('inputs:')
-                print(inputs)
-  
-            module = importlib.import_module(module_name)
-            function = getattr(module,function_name)
-            
-            # Apply operation on training set
-            inputs['dataframe'] = self.train_set
-            function(**inputs)
-
-            # Apply operation on training set
-            inputs['dataframe'] = self.test_set
-            function(**inputs)
-
-    def get_class_codes_maps(self):
-        """Help method for storing information about class codes for each output target"""
-        
-        temp_frame = pandas.concat([self.train_set,self.test_set])
-        encoder = LabelEncoder()
-        self.output_maps = {}
-        for output_target in self.dictionary['output_features']:
-            encoder.fit(temp_frame[output_target])
-            encoder_name_mapping = {int(k1): v1 for k1,v1 in zip(encoder.transform(encoder.classes_), encoder.classes_,)}
-#             encoder_name_mapping = dict(zip(encoder.transform(encoder.classes_), encoder.classes_,))
-            self.output_maps[output_target] = encoder_name_mapping
-
-    def imputation(self):
-        """Impute categorical and numerical missing data"""
-        
-        numerical = self.train_set._get_numeric_data().columns
-        categorical = [column for column in self.train_set.columns if column not in numerical]
-        
-        self.train_set, self.test_set = self.preprocessor.impute_numerical_nans(self.train_set, self.test_set, numerical, 'median', 0)
-        self.train_set, self.test_set = self.preprocessor.impute_categorical_nans(self.train_set, self.test_set, categorical, 'local', 0)
- 
-    def categorical_features_conversion(self):
-        """Convert categorical features into ordinakl integers or dummy variables, depending on the information conatined in the json descriptor"""
-        
-        index = self.train_set.shape[0]
-        temp_frame = pandas.concat([self.train_set,self.test_set])
-        
-        if self.preprocessor.features_to_get_labeled:
-            self.preprocessor.categorical_features_to_label(temp_frame)
-        if self.preprocessor.features_to_get_dummy:
-            self.preprocessor.categorical_features_to_dummy(temp_frame)
-
-        self.train_set = temp_frame.iloc[0:index,:]
-        self.test_set = temp_frame.iloc[index:,:]
-        
-    def rescale(self):
-        """Rescale the collection of input features described by the user"""
-        if self.dictionary['rescale_all']:
-            # rescale all input features
-            self.preprocessor.features_to_rescale = [column for column in self.train_set.columns if column not in self.dictionary['output_features']]
-            self.preprocessor.rescale_features(self.train_set, self.test_set)
-        else:
-            self.preprocessor.rescale_features(self.train_set, self.test_set)
-            
-    def generate_train_test_arrays(self):
-        """Generate input train and test arrays, and a collection of output train and test arrays"""
-        
-        input_features = [column for column in self.train_set.columns if column not in self.dictionary['output_features']]
-        self.X_train = self.train_set[input_features].values 
-        self.X_test = self.test_set[input_features].values
-        
-        self.y_trains = [self.train_set[column].values for column in self.dictionary['output_features']]
-        self.y_tests = [self.test_set[column].values for column in self.dictionary['output_features']]
 
     def optimize_and_predict(self, out_path='.', year=''):
         """Get information about the learner to be used, the hyperparameters to be tuned, and the use grid-search"""
         
-        learner_dictionary = self.dictionary['learner']
-        learner_module_name = learner_dictionary['module_name']
-        learner_class_name =  learner_dictionary['python_class']
-        
-        learner_module = importlib.import_module(learner_module_name)
-        learner_class = getattr(learner_module, learner_class_name)
-        learner = learner_class()
+
         
         grid_search_parameters = self.dictionary['tuning']
         grid_search_parameters['estimator'] = learner
@@ -203,8 +154,6 @@ class ClassificationExperiment(object):
             classification_result['applied_operations'] = list(self.dictionary['operations'].keys())
             classification_result['best_hyperparameters'] = grid_search.best_params_
              
-#             import pdb
-#             pdb.set_trace()
             self.generate_results(output_target, out_path, learner_class_name, sub_directory_name, grid_search.cv_results_, classification_result, year)
              
                         
@@ -224,6 +173,146 @@ class ClassificationExperiment(object):
         for name, data in zip([tuning_file_name, prediction_file_name], [tuning_result, classification_result]):
             with open(name, 'w') as fp:
                 json.dump(data, fp, cls=NumpyEncoder)
+                
+
+    
+    
+    def get_train_test_unseen_sets(self):
+        unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature, fraction=self.unseen_fraction)    
+        if self.unseen_feature:
+            xbt_unseen = self.xbt_labelled.filter_obs({self.unseen_feature: unseen_cruise_numbers}, mode='include', check_type='in_filter_set')
+            xbt_working = self.xbt_labelled.filter_obs({self.unseen_feature: unseen_cruise_numbers}, mode='exclude', check_type='in_filter_set')
+        else:
+            xbt_unseen = None
+            xbt_working = self.xbt_labelled
+        xbt_train_all, xbt_test_all = xbt_working.train_test_split(refresh=True, 
+                                                                   features=self.balance_features,
+                                                                  train_fraction=self.train_fraction)
+        X_train_all = xbt_train_all.filter_features(self.input_features).get_ml_dataset()[0]
+        X_test_all = xbt_test_all.filter_features(self.input_features).get_ml_dataset()[0]
+        y_train_all = xbt_train_all.filter_features([self.target_feature]).get_ml_dataset()[0]
+        y_test_all = xbt_test_all.filter_features([self.target_feature]).get_ml_dataset()[0]
+        if xbt_unseen:
+            X_unseen_all = xbt_unseen.filter_features(self.input_features).get_ml_dataset()[0]
+            y_unseen_all = xbt_unseen.filter_features([self.target_feature]).get_ml_dataset()[0]    
+        else:
+            X_unseen_all = None
+            y_unseen_all = None
+        df_dict = {'train': xbt_train_all,
+                  'test': xbt_test_all,
+                  'unseen': xbt_unseen,}
+        X_dict = {'train': X_train_all,
+                  'test': X_test_all,
+                  'unseen': X_unseen_all,
+                 }
+        y_dict = {'train': y_train_all,
+                  'test': y_test_all,
+                  'unseen': y_unseen_all,
+                 }
+        return X_dict, y_dict, df_dict                
+
+    def train_classifier(self, X_train, y_train):
+        clf = self.classifier_class(**self.classifier_opts)
+        clf.fit(X_train,y_train)
+        return clf    
+    
+    def score_year(self, xbt_df, year, clf):
+        X_year = xbt_df.filter_obs({'year': year}, ).filter_features(self.input_features).get_ml_dataset()[0]
+        y_year = xbt_df.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
+        y_res_year = clf.predict(X_year)
+        metric_year = sklearn.metrics.precision_recall_fscore_support(
+            y_year, y_res_year, average='micro')
+        return metric_year    
+
+    def generate_imeta(self, xbt_ds):
+        imeta_classes = xbt_ds.xbt_df.apply(imeta_classification, axis=1)
+        imeta_df = pandas.DataFrame.from_dict({
+            'instrument': imeta_classes.apply(lambda t1: f'XBT: {t1[0]} ({t1[1]})'),
+            'model': imeta_classes.apply(lambda t1: t1[0]),
+            'manufacturer': imeta_classes.apply(lambda t1: t1[1]),
+        })
+        return imeta_df
+    
+    def score_imeta(self, xbt_ds, data_label):
+        imeta_scores = []
+        for year in range(self.year_range[0],self.year_range[1]):
+            xbt_year = xbt_ds.filter_obs({'year': year} )
+            y_year = xbt_year.filter_features([self.target_feature]).get_ml_dataset()[0]
+            imeta_df_year = self.generate_imeta(xbt_year)
+            y_imeta = xbt_ds._feature_encoders[self.target_feature].transform(imeta_df_year[[self.target_feature]])
+
+            cats = list(xbt_ds._feature_encoders[self.target_feature].categories_[0])
+            prec_year, recall_year, f1_year, support_year = sklearn.metrics.precision_recall_fscore_support(
+                y_year, y_imeta, average='micro')
+            prec_cat, recall_cat, f1_cat, support_cat = sklearn.metrics.precision_recall_fscore_support(
+                y_year, y_imeta)
+
+            metric_dict = {
+                'year': year,
+                'precision_imeta_{dl}_all'.format(dl=data_label): prec_year,
+                'recall_imeta_{dl}_all'.format(dl=data_label): recall_year,
+                'f1_imeta_{dl}_all'.format(dl=data_label): f1_year,
+                          }
+            metric_dict.update({'precision_imeta_{dl}_{cat}'.format(cat=cat, dl=data_label): val for cat, val in zip(cats, prec_cat)})
+            metric_dict.update({'recall_imeta_{dl}_{cat}'.format(cat=cat, dl=data_label): val for cat, val in zip(cats, recall_cat)})
+            metric_dict.update({'f1_imeta_{dl}_{cat}'.format(cat=cat, dl=data_label): val for cat, val in zip(cats, f1_cat)})
+            metric_dict.update({'support_imeta_{dl}_{cat}'.format(cat=cat, dl=data_label): val for cat, val in zip(cats, support_cat)})
+            imeta_scores += [metric_dict]
+        
+        return pandas.DataFrame.from_records(imeta_scores)
+        
+    def generate_metrics(self, clf, xbt_ds, data_label):
+        metric_list = []
+        for year in range(self.year_range[0],self.year_range[1]):
+            X_year = xbt_ds.filter_obs({'year': year}, ).filter_features(self.input_features).get_ml_dataset()[0]
+            y_year = xbt_ds.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
+
+            y_res_year = clf.predict(X_year)
+            cats = list(xbt_ds._feature_encoders[self.target_feature].categories_)[0]
+            prec_year, recall_year, f1_year, support_year = sklearn.metrics.precision_recall_fscore_support(
+                y_year, y_res_year, average='micro')
+            prec_cat, recall_cat, f1_cat, support_cat = sklearn.metrics.precision_recall_fscore_support(
+                y_year, y_res_year)
+
+            column_template = '{metric}_{data}_{subset}'
+            metric_dict = {'year': year,
+                           column_template.format(data=data_label, metric='precision', subset='all'): prec_year,
+                           column_template.format(data=data_label, metric='recall', subset='all'): recall_year,
+                           column_template.format(data=data_label, metric='f1', subset='all'): f1_year,
+                          }
+
+            metric_dict.update({column_template.format(data=data_label, metric='precision', subset=cat): val for cat, val in zip(cats, prec_cat)})
+            metric_dict.update({column_template.format(data=data_label, metric='recall', subset=cat): val for cat, val in zip(cats, recall_cat)})
+            metric_dict.update({column_template.format(data=data_label, metric='f1', subset=cat): val for cat, val in zip(cats, f1_cat)})
+            metric_dict.update({column_template.format(data=data_label, metric='support', subset=cat): val for cat, val in zip(cats, support_cat)})
+            metric_list += [metric_dict]
+            
+        metrics_df = pandas.DataFrame.from_records(metric_list)
+        #TODO: write to file
+        return metrics_df        
+    
+    def generate_prediction(self):
+       # add a column to the dataframe representing the prediction
+        pass
+        
+    def generate_vote_probabilities(self):
+        # take a list of estimators
+        # generate a prediction for each
+        # sum the predictions from classifiers for each class for each obs
+        # generate a one hot style probability of each class based by normalising the vote counts to sum to 1 (divide by num estimators)
+        pass
+        
+    def generate_vote_probabilities(self):
+        # generate probailities directly from the estimator
+        pass
+        
+    def output_predictions(self):
+        # write_predictions to a CSV file
+        # user specifies which features to write
+        pass
+        
+
+
     
 def run_experiment(data_path, result_path, year, train_set_name, test_set_name, json_descriptor):
     """Run a single classification experiment"""
@@ -242,6 +331,31 @@ def run_experiment(data_path, result_path, year, train_set_name, test_set_name, 
     experiment.rescale()
     experiment.generate_train_test_arrays()
     experiment.optimize_and_predict(result_path, year)
+    
+def run_single_experiment(data_dir, output_dir, year_range):
+    experiment = ClassificationExperiment(train_file_name, test_file_name, json_descriptor)
+    pass
+    
+def run_probability_experiment(data_dir, output_dir, year_range):
+    pass
+
+def run_cvhpt_experiment(data_dir, output_dir, year_range):
+    # create the experiment
+    # add fucntions to expriment class to:
+    # load the dataset
+    # load experiment parameters from json
+    # get labelled
+    # create inner and outer fold parameters
+    # create encoders
+    # create hp tune cv tune object
+    # setup parameters for outer cross validation
+    # run cross validation and hp tuning
+    # run scoring for each of the estimators from outer CV
+    # generate prediction for each estimator
+    # output all predictions
+    # using voting to generate voting based probabilities
+    pass    
+    
     
 def main():
     """For running a specific classification experiment from shell"""
