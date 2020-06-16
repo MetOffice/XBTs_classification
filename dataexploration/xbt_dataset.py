@@ -451,6 +451,8 @@ class XbtDataset():
         for ix1 in range(1,num_folds):
             fvl1 = list(df1[df1['fold'] == ix1][feature_name])
             self.xbt_df.loc[self.xbt_df[self.xbt_df[feature_name].apply(lambda x: x in fvl1)].index, fold_feature_name] = ix1
+            
+        self._feature_encoders[fold_feature_name] = get_cat_ml_feature(self.xbt_df[[fold_feature_name]], do_transform=False)
     
     def update_split_from_fold(split_feature, fold_feature, fold_num):
         self.xbt_df[split_feature] = self.xbt_df[fold_feature_name] != fold_num
