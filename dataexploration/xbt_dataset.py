@@ -504,7 +504,10 @@ class XbtDataset():
             if return_data:
                 ml_features[f1] = mlf1
                 column_indices[f1] = column_start
-                column_start += mlf1.shape[1]
+                if len(mlf1.shape) > 1:
+                    column_start += mlf1.shape[1]
+                else:
+                    column_start += 1
                 
         if return_data:
             ml_ds = numpy.concatenate([v1 for k1,v1 in ml_features.items()], axis=1)
