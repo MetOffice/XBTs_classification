@@ -15,6 +15,14 @@ pandas.options.mode.chained_assignment = None
 import dataexploration.xbt_dataset
 from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
+
+RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
+OUTPUT_FNAME_TEMPLATE = 'xbt_output_{name}.csv'
+
+UNSEEN_FOLD_NAME = 'unseen_fold'
+RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
+PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat1}'
+
 class NumpyEncoder(json.JSONEncoder):
     """Encoder to print the result of tuning into a json file"""
     def default(self, obj):
@@ -35,11 +43,16 @@ class ClassificationExperiment(object):
         self.output_dir = output_dir
         self.results_dir = results_dir
         self.json_descriptor = json_descriptor
-        self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split']
+        self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
         self.dataset = None
         self.read_json_file()
+        self.results = None
+        self.classifier = None
+        self._n_jobs = -1
+        self._cv_output = None
+        self.xbt_predictable = None
         
-    def run_single_experiment(self):
+    def run_single_experiment(self, write_results=True, write_predictions=True):
 
         print('loading dataset')
         self.load_dataset()
@@ -64,9 +77,131 @@ class ClassificationExperiment(object):
         exp_results = exp_results.merge(self.score_imeta(df_dict['test'], 'est'), on='year')
         exp_results = exp_results.merge(self.score_imeta(df_dict['unseen'], 'unseen'), on='year')
         
-        # TODO: run prediction on full dataset
-        # TODO: output predictions
-        return exp_results
+        self.results = exp_results
+        self.classifier = clf1
+        
+        # output results to a file
+        if write_results:
+            self.results.to_csv(
+                os.path.join(self.results_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=self.experiment_name)))
+        
+        
+        # generate imeta algorithm results for the whole dataset
+        imeta_df = self.generate_imeta(self.dataset)
+        imeta_df = imeta_df.rename(
+            columns={'instrument': 'imeta_instrument',
+                     'model': 'imeta_model',
+                     'manufacturer': 'imeta_manufacturer',
+            })        
+        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])        
+        
+        # run prediction on full dataset
+        feature_name = '{target}_res_{name}'.format(target=self.target_feature,
+                                                    name=self.classifier_name,
+                                                   )
+        self.generate_prediction(self.classifier, feature_name)
+        
+        # output predictions
+        if write_predictions:
+            self.dataset.output_data(
+                os.path.join(self.output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=self.experiment_name)),
+                add_ml_features=[feature_name])
+            
+        return (self.results, self.classifier)
+    
+    def run_cvhpt_experiment(self, write_results=True, write_predictions=True):
+        print('loading dataset')
+        self.load_dataset()
+        # get train/test/unseen sets
+        print('generating splits')
+        self.xbt_labelled.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)        
+        
+        X_labelled = self.xbt_labelled.filter_features(self.input_features).get_ml_dataset()[0]
+        y_labelled = self.xbt_labelled.filter_features([self.target_feature]).get_ml_dataset()[0]
+        
+        # create objects for cross validation and hyperparameter tuning
+        # first set up objects for the inner cross validation, which run for each
+        # set of hyperparameters in the grid search.
+        group_cv1 = sklearn.model_selection.GroupKFold(n_splits=self.num_unseen_splits)
+        classifier_obj = classifier_class(**self._default_classifier_opts)
+        grid_search_cv = sklearn.model_selection.GridSearchCV(
+            classifier_obj,
+            param_grid = self._tuning_dict['param_grid'],  
+            scoring=self._tuning_dict['scoring'],
+            cv=self.num_training_splits,
+        )
+        
+        # now run the outer cross-validation with the grid search HPT as the classifier,
+        # so for each split, HPT will be run with CV on each set of hyperparameters
+        scores = sklearn.model_selection.cross_validate(
+            grid_search_cv,
+            X_labelled, y_labelled, 
+            groups=self.xbt_labelled[UNSEEN_FOLD_NAME], 
+            cv=group_cv1,
+            return_estimator=self.return_estimator,
+            return_train_score=True,
+            scoring=cv_metrics,
+            n_jobs=self._n_jobs,
+        )        
+
+        self._cv_output = scores
+        self.classifier = scores['estimator']
+       
+        metrics_list = {}
+        for split_num, estimator in enumerate(self.classifier):
+            xbt_train = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
+            xbt_test = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
+            train_metrics = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num))
+            test_metrics = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num))
+            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')        
+
+        metrics_df_merge = None
+        for label1, metrics1  in metrics_list.items():
+            if metrics_df_merge is None:
+                metrics_df_merge = metrics1
+            else:
+                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1)            
+        self.results = metrics_df_merge
+
+        # output results to a file
+        if write_results:
+            self.results.to_csv(
+                os.path.join(self.results_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=self.experiment_name)))
+        
+        
+        # generate imeta algorithm results for the whole dataset
+        imeta_df = self.generate_imeta(self.dataset)
+        imeta_df = imeta_df.rename(
+            columns={'instrument': 'imeta_instrument',
+                     'model': 'imeta_model',
+                     'manufacturer': 'imeta_manufacturer',
+            })
+        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
+        
+        # run prediction on full dataset
+        result_feature_names = []
+        for split_num, estimator in enumerate(self.classifier):
+            res_name = RESULT_FEATURE_TEMPLATE.format(
+                target=self.target_feature,
+                clf=self.classifier_name,
+                split_num=split_num)
+            result_feature_names += [res_name]        
+            self.generate_prediction(estimator, feature_name)
+        
+        # generate vote count probabilities from the different trained classifiers
+        self.generate_vote_probabilities(result_feature_names)
+        
+        # output predictions
+        if write_predictions:
+            self.dataset.output_data(
+                os.path.join(self.output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=self.experiment_name + '_cv')),
+                add_ml_features=[])
+                    
+        return (self.results, self.classifier)
     
                 
     def load_dataset(self):
@@ -95,27 +230,39 @@ class ClassificationExperiment(object):
                 raise ValueError(f'Primary key {k1} in not found in json parameter descriptor!')
         
         self.json_params = dictionary
+        self.experiment_name = self.json_params['experiment_name']
         self.year_range = (self.json_params['year_range'][0], self.json_params['year_range'][1])
         self.input_features = self.json_params['input_features']
         self.target_feature = self.json_params['output_feature']
-        self.test_fraction = self.json_params['split']['test_fraction']
+        
+        self.num_training_splits = int(self.json_params['split']['num_training_splits'])
+        self.test_fraction = 1.0 / self.num_training_splits
         self.train_fraction = 1.0 - self.test_fraction
-        self.unseen_fraction = self.json_params['split']['unseen_fraction']
+        self.num_unseen_splits = int(self.json_params['split']['num_unseen_splits'])
+        self.unseen_fraction = 1.0 / self.num_unseen_splits
         self.unseen_feature = self.json_params['split']['unseen_feature']
         self.balance_features = self.json_params['split']['balance_features']
+        
+        self.return_estimator =  self.json_params['tuning']['return_estimator'] == 'true'
+        self.return_train_score =  self.json_params['tuning']['return_train_score'] == 'true'
         
         learner_dictionary = self.json_params['learner']
         learner_module_name = learner_dictionary['module_name']
         learner_class_name =  learner_dictionary['python_class']
         learner_module = importlib.import_module(learner_module_name)
         learner_class = getattr(learner_module, learner_class_name)
+        self.classifier_name = learner_dictionary['name']
         self.classifier_class = learner_class       
-        self.classifier_opts = {}
         self._tuning_dict = self.json_params['tuning']
-
+        
+        #these options will be used for running a single experiment (i.e. no CV or HPT)
+        self._default_classifier_opts = {k1: v1[0] for k1,v1 in self._tuning_dict['param_grid'].items()}
 
     def optimize_and_predict(self, out_path='.', year=''):
-        """Get information about the learner to be used, the hyperparameters to be tuned, and the use grid-search"""
+        """
+        OLD FUNCTION - TO BE DELETED
+        Get information about the learner to be used, the hyperparameters to be tuned, and the use grid-search
+        """
         
 
         
@@ -158,7 +305,10 @@ class ClassificationExperiment(object):
              
                         
     def generate_results(self, output_target, out_path, learner_class_name, sub_directory_name, tuning_result, classification_result, year):
-        """Store results from tuning and prediction into json files, generating a proper tree of directories"""
+        """
+        OLD FUNCTION - TO BE DELETED
+        Store results from tuning and prediction into json files, generating a proper tree of directories
+        """
         
         base_dir = os.path.join(out_path, learner_class_name)
         out_dir = os.path.join(base_dir,sub_directory_name)
@@ -212,7 +362,7 @@ class ClassificationExperiment(object):
         return X_dict, y_dict, df_dict                
 
     def train_classifier(self, X_train, y_train):
-        clf = self.classifier_class(**self.classifier_opts)
+        clf = self.classifier_class(**self._default_classifier_opts)
         clf.fit(X_train,y_train)
         return clf    
     
@@ -227,6 +377,7 @@ class ClassificationExperiment(object):
     def generate_imeta(self, xbt_ds):
         imeta_classes = xbt_ds.xbt_df.apply(imeta_classification, axis=1)
         imeta_df = pandas.DataFrame.from_dict({
+            'id': xbt_ds.xbt_df['id'],
             'instrument': imeta_classes.apply(lambda t1: f'XBT: {t1[0]} ({t1[1]})'),
             'model': imeta_classes.apply(lambda t1: t1[0]),
             'manufacturer': imeta_classes.apply(lambda t1: t1[1]),
@@ -288,31 +439,63 @@ class ClassificationExperiment(object):
             metric_list += [metric_dict]
             
         metrics_df = pandas.DataFrame.from_records(metric_list)
-        #TODO: write to file
         return metrics_df        
     
-    def generate_prediction(self):
-       # add a column to the dataframe representing the prediction
-        pass
+    def generate_prediction(self, clf, feature_name):
+        if self.xbt_predictable is None:
+            # checker functions check each element of the profile metadata that could be a problem. The checkers are constructed from the labelled data subset.
+            checkers_labelled = {f1: c1 for f1, c1 in self.xbt_labelled.get_checkers().items() if f1 in self.input_features}   
+            self.xbt_predictable = self.dataset.filter_predictable(checkers_labelled)
         
-    def generate_vote_probabilities(self):
+        # generate classification for predictable profiles
+        res_ml1 = clf.predict(self.xbt_predictable.filter_features(self.input_features).get_ml_dataset()[0])
+        res2 = list(self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_ml1).reshape(-1))        
+        self.xbt_predictable.xbt_df[feature_name] = res2        
+        
+        def imeta_instrument(row1):
+            return 'XBT: {t1[0]} ({t1[1]})'.format(t1=imeta_classification(row1))        
+        
+        # checking for missing values and fill in imeta
+        flag_name = 'imeta_applied_{name}'.format(name=feature_name)
+        self.xbt_predictable.xbt_df[flag_name] = 0
+        self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, flag_name] = 1
+        self.xbt_predictable.xbt_df[flag_name] = self.xbt_predictable.xbt_df[flag_name].astype('int8')
+        self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, feature_name] = \
+            self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].apply(imeta_instrument, axis=1)
+        
+        # merge into full dataset
+        fv_dict = {feature_name: dataexploration.xbt_dataset.UNKNOWN_STR,
+                   flag_name: 1
+                  }
+        self.dataset.merge_features(self.xbt_predictable, [feature_name, flag_name],
+                               fill_values = fv_dict,
+                               encoders={feature_name: self.xbt_labelled._feature_encoders[self.target_feature]},
+                                output_formatters={feature_name: dataexploration.xbt_dataset.cat_output_formatter})        
+        
+        # fill in imeta for unpredictable values
+        xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.CQ_FLAG: 0})
+        imeta_instrument_fallback = xbt_unknown_inputs.xbt_df.apply(imeta_instrument, axis=1)
+        self.dataset.xbt_df.loc[xbt_unknown_inputs.xbt_df.index, feature_name] = imeta_instrument_fallback
+        self.dataset.xbt_df[flag_name] = self.dataset.xbt_df[flag_name].astype('int8')
+        
+    def generate_vote_probabilities(self, result_feature_names):
         # take a list of estimators
         # generate a prediction for each
         # sum the predictions from classifiers for each class for each obs
         # generate a one hot style probability of each class based by normalising the vote counts to sum to 1 (divide by num estimators)
-        pass
+        vote_count = numpy.zeros([self.dataset.shape[0], len(self.dataset._feature_encoders[result_feature_names[0]].categories_[0])],dtype=numpy.float64)
+        for res_name in result_feature_names:
+            vote_count += self.dataset.filter_features([res_name]).get_ml_dataset()[0]
+        vote_count /= float(len(result_feature_names))        
+        vote_dict = {PROB_CAT_TEMPLATE.format(target=self.target_feature,
+                                              clf=self.classifier_name,
+                                              cat=cat1,
+                                             ): vote_count[:,ix1] for ix1, cat1 in enumerate(self.dataset._feature_encoders['instrument'].categories_[0])}
+        vote_dict.update({'id': self.dataset['id']})
+        vote_df = pandas.DataFrame(vote_dict)        
+        self.dataset.xbt_df = self.dataset.xbt_df.merge(vote_df, on='id')
         
-    def generate_vote_probabilities(self):
-        # generate probailities directly from the estimator
-        pass
         
-    def output_predictions(self):
-        # write_predictions to a CSV file
-        # user specifies which features to write
-        pass
-        
-
-
     
 def run_experiment(data_path, result_path, year, train_set_name, test_set_name, json_descriptor):
     """Run a single classification experiment"""
@@ -352,6 +535,7 @@ def run_cvhpt_experiment(data_dir, output_dir, year_range):
     # run cross validation and hp tuning
     # run scoring for each of the estimators from outer CV
     # generate prediction for each estimator
+    # select a best estimator 
     # output all predictions
     # using voting to generate voting based probabilities
     pass    
