@@ -17,6 +17,8 @@ UNKNOWN_STR = 'UNKNOWN'
 UNKNOWN_MODEL_STR = 'TYPE UNKNOWN'
 UNKNOWN_MANUFACTURER_STR = 'UNKNOWN BRAND'
 
+CQ_FLAG = 'classification_quality_flag'
+
 EXCLUDE_LIST = ['Unnamed: 0']
 KEY_DICT = {
     'CRUISE': 'cruise_number',
@@ -322,8 +324,8 @@ class XbtDataset():
             axis='columns',
         )
                 
-        self.xbt_df['classification_quality_flag'] = 0
-        self.xbt_df.loc[self.xbt_df.index[filter_values], 'classification_quality_flag'] = 1
+        self.xbt_df[CQ_FLAG] = 0
+        self.xbt_df.loc[self.xbt_df.index[filter_values], CQ_FLAG] = 1
         subset = self.xbt_df[filter_values]
         xbt_predictable = XbtDataset(
             year_range=self.year_range, 
@@ -362,7 +364,6 @@ class XbtDataset():
         out_df.to_csv(out_path)
     
     def merge_features(self, other, features_to_merge, fill_values=None, encoders=None, output_formatters=None):
-        #TODO test in dev first, 
         merged_df = self.xbt_df.merge(other.xbt_df[['id'] + features_to_merge], on='id', how='outer')
         if fill_values:
             for f1, fv1 in fill_values.items():
