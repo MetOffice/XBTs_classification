@@ -1,7 +1,9 @@
 import argparse
 import ast
 import copy
+import datetime
 import importlib
+import joblib
 import json
 import numpy
 import os
@@ -17,11 +19,13 @@ from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
 
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
-OUTPUT_FNAME_TEMPLATE = 'xbt_output_{name}.csv'
+OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{name}.csv'
+CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
+DATESTAMP_TEMPLATE = '{dt.year:04d}{dt.month:02d}{dt.day:02d}_{dt.hour:02d}{dt.minute:02d}'
 
 UNSEEN_FOLD_NAME = 'unseen_fold'
 RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
-PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat1}'
+PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat}'
 
 class NumpyEncoder(json.JSONEncoder):
     """Encoder to print the result of tuning into a json file"""
@@ -38,21 +42,29 @@ class ClassificationExperiment(object):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
-    def __init__(self, json_descriptor, data_dir, output_dir, results_dir):
+    def __init__(self, json_descriptor, data_dir, output_dir):
         self.data_dir = data_dir
-        self.output_dir = output_dir
-        self.results_dir = results_dir
+        self.root_output_dir = output_dir
         self.json_descriptor = json_descriptor
         self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
         self.dataset = None
         self.read_json_file()
+        self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
         self.results = None
-        self.classifier = None
+        self.classifiers = {}
         self._n_jobs = -1
         self._cv_output = None
         self.xbt_predictable = None
+        self._exp_datestamp = None
         
-    def run_single_experiment(self, write_results=True, write_predictions=True):
+    def _generate_exp_datestamp(self):
+        self._exp_datestamp = DATESTAMP_TEMPLATE.format(dt=datetime.datetime.now())
+        
+    def run_single_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        """
+        """
+        self._check_output_dir()
+        self._generate_exp_datestamp()
 
         print('loading dataset')
         self.load_dataset()
@@ -73,21 +85,24 @@ class ClassificationExperiment(object):
         exp_results = exp_results.merge(metrics_unseen, on='year')
         
         # generate imeta
+        print('generating imeta output')
         exp_results = exp_results.merge(self.score_imeta(df_dict['train'], 'train'), on='year')
         exp_results = exp_results.merge(self.score_imeta(df_dict['test'], 'est'), on='year')
         exp_results = exp_results.merge(self.score_imeta(df_dict['unseen'], 'unseen'), on='year')
         
         self.results = exp_results
-        self.classifier = clf1
+        self.classifiers = {0: clf1}
         
         # output results to a file
         if write_results:
+            out_name = self.experiment_name + '_' + self._exp_datestamp
             self.results.to_csv(
-                os.path.join(self.results_dir,
-                             RESULT_FNAME_TEMPLATE.format(name=self.experiment_name)))
+                os.path.join(self.exp_output_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=out_name)))
         
         
         # generate imeta algorithm results for the whole dataset
+        print('generating predictions for the whole dataset.')
         imeta_df = self.generate_imeta(self.dataset)
         imeta_df = imeta_df.rename(
             columns={'instrument': 'imeta_instrument',
@@ -100,18 +115,29 @@ class ClassificationExperiment(object):
         feature_name = '{target}_res_{name}'.format(target=self.target_feature,
                                                     name=self.classifier_name,
                                                    )
-        self.generate_prediction(self.classifier, feature_name)
+        self.generate_prediction(self.classifiers[0], feature_name)
         
         # output predictions
         if write_predictions:
+            print('writing predictions to output csv file.')
+            out_name = self.experiment_name + '_' + self._exp_datestamp
             self.dataset.output_data(
-                os.path.join(self.output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=self.experiment_name)),
+                os.path.join(self.exp_output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
                 add_ml_features=[feature_name])
             
-        return (self.results, self.classifier)
+        if export_classifiers:
+            print('exporting classifier objects through pickle')
+            self.export_classifiers()
+            
+        return (self.results, self.classifiers)
     
-    def run_cvhpt_experiment(self, write_results=True, write_predictions=True):
+    def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        """
+        """
+        self._check_output_dir()
+        self._generate_exp_datestamp()
+        
         print('loading dataset')
         self.load_dataset()
         # get train/test/unseen sets
@@ -124,8 +150,10 @@ class ClassificationExperiment(object):
         # create objects for cross validation and hyperparameter tuning
         # first set up objects for the inner cross validation, which run for each
         # set of hyperparameters in the grid search.
+        print('creating hyperparameter tuning objects')
+
         group_cv1 = sklearn.model_selection.GroupKFold(n_splits=self.num_unseen_splits)
-        classifier_obj = classifier_class(**self._default_classifier_opts)
+        classifier_obj = self.classifier_class(**self._default_classifier_opts)
         grid_search_cv = sklearn.model_selection.GridSearchCV(
             classifier_obj,
             param_grid = self._tuning_dict['param_grid'],  
@@ -135,22 +163,25 @@ class ClassificationExperiment(object):
         
         # now run the outer cross-validation with the grid search HPT as the classifier,
         # so for each split, HPT will be run with CV on each set of hyperparameters
+        print('running cross validation')
         scores = sklearn.model_selection.cross_validate(
             grid_search_cv,
             X_labelled, y_labelled, 
             groups=self.xbt_labelled[UNSEEN_FOLD_NAME], 
             cv=group_cv1,
             return_estimator=self.return_estimator,
-            return_train_score=True,
-            scoring=cv_metrics,
+            return_train_score=self.return_train_score,
+            scoring=self._tuning_dict['cv_metrics'],
             n_jobs=self._n_jobs,
         )        
 
         self._cv_output = scores
-        self.classifier = scores['estimator']
+        self.classifiers = {split_num: est1 
+                            for split_num, est1 in enumerate(scores['estimator'])}
        
+        print('calculating metrics')
         metrics_list = {}
-        for split_num, estimator in enumerate(self.classifier):
+        for split_num, estimator in self.classifiers.items():
             xbt_train = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
             xbt_test = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
             train_metrics = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num))
@@ -167,9 +198,10 @@ class ClassificationExperiment(object):
 
         # output results to a file
         if write_results:
+            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
             self.results.to_csv(
-                os.path.join(self.results_dir,
-                             RESULT_FNAME_TEMPLATE.format(name=self.experiment_name)))
+                os.path.join(self.exp_output_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=out_name)))
         
         
         # generate imeta algorithm results for the whole dataset
@@ -183,25 +215,30 @@ class ClassificationExperiment(object):
         
         # run prediction on full dataset
         result_feature_names = []
-        for split_num, estimator in enumerate(self.classifier):
+        for split_num, estimator in self.classifiers.items():
             res_name = RESULT_FEATURE_TEMPLATE.format(
                 target=self.target_feature,
                 clf=self.classifier_name,
                 split_num=split_num)
             result_feature_names += [res_name]        
-            self.generate_prediction(estimator, feature_name)
+            self.generate_prediction(estimator, res_name)
         
         # generate vote count probabilities from the different trained classifiers
         self.generate_vote_probabilities(result_feature_names)
         
         # output predictions
         if write_predictions:
+            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
             self.dataset.output_data(
-                os.path.join(self.output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=self.experiment_name + '_cv')),
+                os.path.join(self.exp_output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
                 add_ml_features=[])
                     
-        return (self.results, self.classifier)
+        if export_classifiers:
+            print('exporting classifier objects through pickle')
+            self.export_classifiers()
+            
+        return (self.results, self.classifiers)
     
                 
     def load_dataset(self):
@@ -215,6 +252,12 @@ class ClassificationExperiment(object):
         # initialise the feature encoders on the labelled data
         _ = self.xbt_labelled.get_ml_dataset(return_data=False)
 
+    def _check_output_dir(self):
+        if not self.exp_output_dir:
+            raise RuntimeError(f'experiment output directory path ({self.exp_output_dir}) not defined.')
+        
+        if not os.path.isdir(self.exp_output_dir):
+            os.makedirs(self.exp_output_dir)
         
     def read_json_file(self):
         """Open json descriptor file, load its content into a dictionary"""
@@ -243,8 +286,8 @@ class ClassificationExperiment(object):
         self.unseen_feature = self.json_params['split']['unseen_feature']
         self.balance_features = self.json_params['split']['balance_features']
         
-        self.return_estimator =  self.json_params['tuning']['return_estimator'] == 'true'
-        self.return_train_score =  self.json_params['tuning']['return_train_score'] == 'true'
+        self.return_estimator =  self.json_params['tuning']['return_estimator']
+        self.return_train_score =  self.json_params['tuning']['return_train_score']
         
         learner_dictionary = self.json_params['learner']
         learner_module_name = learner_dictionary['module_name']
@@ -495,6 +538,14 @@ class ClassificationExperiment(object):
         vote_df = pandas.DataFrame(vote_dict)        
         self.dataset.xbt_df = self.dataset.xbt_df.merge(vote_df, on='id')
         
+    def export_classifiers(self):
+        for split_num, clf1 in self.classifiers.items():
+            export_path = os.path.join(
+                self.exp_output_dir,
+                CLASSIFIER_EXPORT_FNAME_TEMPLATE.format(split_num=split_num,
+                                                        exp=self.experiment_name,
+                                                        ))
+            joblib.dump(clf1, export_path)
         
     
 def run_experiment(data_path, result_path, year, train_set_name, test_set_name, json_descriptor):
