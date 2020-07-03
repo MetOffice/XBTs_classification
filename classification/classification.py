@@ -51,7 +51,7 @@ class ClassificationExperiment(object):
         self.read_json_file()
         self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
         self.results = None
-        self.classifiers = {}
+        self.classifiers = None
         self._n_jobs = -1
         self._cv_output = None
         self.xbt_predictable = None
@@ -69,6 +69,7 @@ class ClassificationExperiment(object):
         print('loading dataset')
         self.load_dataset()
         # get train/test/unseen sets
+        
         print('generating splits')
         X_dict, y_dict, df_dict = self.get_train_test_unseen_sets()
             
@@ -240,7 +241,53 @@ class ClassificationExperiment(object):
             
         return (self.results, self.classifiers)
     
-                
+    def run_inference(self, classifier_paths, write_predictions=True):
+        """
+        """
+        self._check_output_dir()
+        self._generate_exp_datestamp()
+        
+        print('loading dataset')
+        self.load_dataset()
+
+        print('loading saved classifiers from pickle files.')
+        self.classifiers = {ix1: joblib.load(path1)
+                            for ix1, path1 in enumerate(classifier_paths)
+                           }
+        
+        print('generate imeta algorithm results for the whole dataset')
+        imeta_df = self.generate_imeta(self.dataset)
+        imeta_df = imeta_df.rename(
+            columns={'instrument': 'imeta_instrument',
+                     'model': 'imeta_model',
+                     'manufacturer': 'imeta_manufacturer',
+            })
+        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
+        
+        print(' run prediction on full dataset')
+        result_feature_names = []
+        for split_num, estimator in self.classifiers.items():
+            res_name = RESULT_FEATURE_TEMPLATE.format(
+                target=self.target_feature,
+                clf=self.classifier_name,
+                split_num=split_num)
+            result_feature_names += [res_name]        
+            self.generate_prediction(estimator, res_name)
+        
+        print('generate vote count probabilities from the different trained classifiers')
+        self.generate_vote_probabilities(result_feature_names)
+        
+        print('output predictions')
+        if write_predictions:
+            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
+            self.dataset.output_data(
+                os.path.join(self.exp_output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
+                add_ml_features=[])
+                    
+        return self.classifiers
+    
+    
     def load_dataset(self):
         """
         create a XBTDataset
@@ -458,15 +505,26 @@ class ClassificationExperiment(object):
     def generate_metrics(self, clf, xbt_ds, data_label):
         metric_list = []
         for year in range(self.year_range[0],self.year_range[1]):
-            X_year = xbt_ds.filter_obs({'year': year}, ).filter_features(self.input_features).get_ml_dataset()[0]
-            y_year = xbt_ds.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
-
-            y_res_year = clf.predict(X_year)
+            xbt_year = xbt_ds.filter_obs({'year': year} )
             cats = list(xbt_ds._feature_encoders[self.target_feature].categories_)[0]
-            prec_year, recall_year, f1_year, support_year = sklearn.metrics.precision_recall_fscore_support(
-                y_year, y_res_year, average='micro')
-            prec_cat, recall_cat, f1_cat, support_cat = sklearn.metrics.precision_recall_fscore_support(
-                y_year, y_res_year)
+            if xbt_year.shape[0] > 0:
+                X_year = xbt_year.filter_features(self.input_features).get_ml_dataset()[0]
+                y_year = xbt_ds.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
+
+                y_res_year = clf.predict(X_year)
+                prec_year, recall_year, f1_year, support_year = sklearn.metrics.precision_recall_fscore_support(
+                    y_year, y_res_year, average='micro')
+                prec_cat, recall_cat, f1_cat, support_cat = sklearn.metrics.precision_recall_fscore_support(
+                    y_year, y_res_year)
+            else:
+                prec_year = 0.0
+                recall_year = 0.0
+                f1_year = 0.0
+                support_year = 0
+                prec_cat = [0.0] * len(cats)
+                recall_cat = [0.0] * len(cats)
+                f1_cat = [0.0] * len(cats)
+                support_cat = [0.0] * len(cats)
 
             column_template = '{metric}_{data}_{subset}'
             metric_dict = {'year': year,
