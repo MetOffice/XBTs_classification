@@ -43,19 +43,27 @@ class ClassificationExperiment(object):
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
     def __init__(self, json_descriptor, data_dir, output_dir):
+        # assign arguments
         self.data_dir = data_dir
         self.root_output_dir = output_dir
         self.json_descriptor = json_descriptor
-        self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
+        
+        # initialise to None where appropriate
         self.dataset = None
-        self.read_json_file()
-        self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
         self.results = None
         self.classifiers = None
         self._n_jobs = -1
         self._cv_output = None
         self.xbt_predictable = None
         self._exp_datestamp = None
+        self.classifier_fnames = None
+        self.experiment_description_dir = None
+        
+        # load experiment definition from json file
+        self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
+        self.read_json_file()
+        self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
+        
         
     def _generate_exp_datestamp(self):
         self._exp_datestamp = DATESTAMP_TEMPLATE.format(dt=datetime.datetime.now())
@@ -241,7 +249,7 @@ class ClassificationExperiment(object):
             
         return (self.results, self.classifiers)
     
-    def run_inference(self, classifier_paths, write_predictions=True):
+    def run_inference(self, write_predictions=True):
         """
         """
         self._check_output_dir()
@@ -251,8 +259,9 @@ class ClassificationExperiment(object):
         self.load_dataset()
 
         print('loading saved classifiers from pickle files.')
-        self.classifiers = {ix1: joblib.load(path1)
-                            for ix1, path1 in enumerate(classifier_paths)
+        self.classifiers = {ix1: joblib.load(os.path.join(self.experiment_description_dir,
+                                                         fname1))
+                            for ix1, fname1 in enumerate(self.classifier_fnames)
                            }
         
         print('generate imeta algorithm results for the whole dataset')
@@ -311,6 +320,9 @@ class ClassificationExperiment(object):
         
         if not os.path.isfile(self.json_descriptor):
             raise ValueError('Missing json descriptor!')
+        if not os.path.isabs(self.json_descriptor):
+            self.json_descriptor = os.path.abspath(self.json_descriptor)
+        self.experiment_description_dir, self.json_fname  = os.path.split(self.json_descriptor)
         with open(self.json_descriptor) as json_data:
             dictionary = json.load(json_data)
             
@@ -344,6 +356,10 @@ class ClassificationExperiment(object):
         self.classifier_name = learner_dictionary['name']
         self.classifier_class = learner_class       
         self._tuning_dict = self.json_params['tuning']
+        try:
+            self.classifier_fnames = self.json_params['classifier_fnames']
+        except KeyError:
+            self.classifier_fnames = None
         
         #these options will be used for running a single experiment (i.e. no CV or HPT)
         self._default_classifier_opts = {k1: v1[0] for k1,v1 in self._tuning_dict['param_grid'].items()}
@@ -597,13 +613,24 @@ class ClassificationExperiment(object):
         self.dataset.xbt_df = self.dataset.xbt_df.merge(vote_df, on='id')
         
     def export_classifiers(self):
+        self.classifier_output_fnames = []
         for split_num, clf1 in self.classifiers.items():
-            export_path = os.path.join(
-                self.exp_output_dir,
-                CLASSIFIER_EXPORT_FNAME_TEMPLATE.format(split_num=split_num,
-                                                        exp=self.experiment_name,
-                                                        ))
+            export_fname = CLASSIFIER_EXPORT_FNAME_TEMPLATE.format(
+                split_num=split_num,
+                exp=self.experiment_name,
+            )
+            self.classifier_output_fnames += [export_fname]
+            export_path = os.path.join(self.exp_output_dir,
+                                       export_fname)
             joblib.dump(clf1, export_path)
+        out_dict = dict(self.json_params)
+        out_dict['experiment_name'] = out_dict['experiment_name'] + '_inference'
+        out_dict['classifier_fnames'] = self.classifier_output_fnames
+        self.inference_out_json_path = os.path.join(self.exp_output_dir, f'xbt_param_{self.experiment_name}_inference.json')
+        print(f' writing inference experiment output file to {self.inference_out_json_path}')
+        with open(self.inference_out_json_path, 'w') as json_out_file:
+            json.dump(out_dict, json_out_file)
+            
         
     
 def run_experiment(data_path, result_path, year, train_set_name, test_set_name, json_descriptor):

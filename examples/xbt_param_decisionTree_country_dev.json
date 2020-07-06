@@ -1,18 +1,18 @@
 {"input_features": ["country", "max_depth", "year"],
  "output_feature":"instrument",
- "year_range": [1970,1974],
+ "year_range": [1970,1975],
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
-          "num_unseen_splits": 5,
-          "num_training_splits": 5
+          "num_unseen_splits": 3,
+          "num_training_splits": 3
         },
  "experiment_name": "decisionTree_country_dev",
  "learner":{"module_name":"sklearn.tree",
             "python_class":"DecisionTreeClassifier",
             "name": "DecisionTree"
            },
- "tuning":{"param_grid":{"max_depth": [null, 5,10,20], 
+ "tuning":{"param_grid":{"max_depth": [5,10,20], 
                          "min_samples_leaf": [1,5], 
                          "criterion": ["gini"]           
                         },
