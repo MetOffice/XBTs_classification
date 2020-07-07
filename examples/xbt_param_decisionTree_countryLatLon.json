@@ -1,14 +1,14 @@
-{"input_features": ["country", "max_depth", "year"],
+{"input_features": ["country", "lat", "lon", "max_depth", "year"],
  "output_feature":"instrument",
  "year_range": [1966,2015],
- "parallel_jobs": 8,
+ "parallel_jobs": -1,
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
           "num_unseen_splits": 5,
           "num_training_splits": 5
         },
- "experiment_name": "decisionTree_country",
+ "experiment_name": "decisionTree_countryLatLon",
  "learner":{"module_name":"sklearn.tree",
             "python_class":"DecisionTreeClassifier",
             "name": "DecisionTree"

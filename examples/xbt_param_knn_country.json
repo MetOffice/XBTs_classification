@@ -1,22 +1,21 @@
 {"input_features": ["country", "max_depth", "year"],
  "output_feature":"instrument",
  "year_range": [1966,2015],
- "parallel_jobs": 8,
+ "parallel_jobs": 1,
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
           "num_unseen_splits": 5,
           "num_training_splits": 5
         },
- "experiment_name": "decisionTree_country",
- "learner":{"module_name":"sklearn.tree",
-            "python_class":"DecisionTreeClassifier",
-            "name": "DecisionTree"
+ "experiment_name": "knn_country",
+ "learner":{"module_name":"sklearn.neighbors",
+            "python_class":"KNeighborsClassifier",
+            "name": "kNN"
            },
- "tuning":{"param_grid":{"max_depth": [null, 5,10,20], 
-                         "min_samples_leaf": [1,2,5], 
-                         "criterion": ["gini", "entropy"]           
-                        },
+ "tuning":{"param_grid": {"weights": ["uniform", "distance" ],
+                          "n_neighbors": [2,5,10,20]
+                         },
            "scoring":"recall_micro",
            "n_jobs":1,
            "return_train_score":true,
