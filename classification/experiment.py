@@ -319,7 +319,7 @@ class ClassificationExperiment(object):
         """Open json descriptor file, load its content into a dictionary"""
         
         if not os.path.isfile(self.json_descriptor):
-            raise ValueError('Missing json descriptor!')
+            raise ValueError(f'Missing json descriptor {self.json_descriptor}!')
         if not os.path.isabs(self.json_descriptor):
             self.json_descriptor = os.path.abspath(self.json_descriptor)
         self.experiment_description_dir, self.json_fname  = os.path.split(self.json_descriptor)
