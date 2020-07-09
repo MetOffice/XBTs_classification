@@ -93,6 +93,15 @@ def get_cat_ml_feature(cat_feature, do_transform=True):
         ml_feature = None    
     return (encoder, ml_feature)
 
+def get_target_ml_feature(target_feature, do_transform=True):
+    encoder = sklearn.preprocessing.LabelEncoder()
+    encoder.fit(target_feature)
+    if do_transform:
+        ml_feature = encoder.transform(target_feature)
+    else:
+        ml_feature = None    
+    return (encoder, ml_feature)
+
 def get_ord_ml_feature(ord_feature, do_transform=True):
     encoder = sklearn.preprocessing.OrdinalEncoder()
     encoder.fit(ord_feature)
@@ -138,13 +147,17 @@ def cat_output_formatter(feature_name, feature_data, encoder):
         dtype={f1: 'int8' for f1 in out_columns})
 
 CATEGORICAL_LOADED_FEATURES = [
-    'country', 'institute', 'platform', 'cruise_number', 
-    'instrument', 'imeta_applied'
+    'country', 'institute', 'platform', 'cruise_number', 'imeta_applied',
 ]
-CATEGORICAL_GENERATED_FEATURES = [
+CATEGORICAL_GENERATED_FEATURES = []
+CATEGORICAL_FEATURES = CATEGORICAL_LOADED_FEATURES + CATEGORICAL_GENERATED_FEATURES
+
+TARGET_LOADED_FEATURES = [ 'instrument', ]
+TARGET_GENERATED_FEATURES = [
     'model', 'manufacturer',
 ]
-CATEGORICAL_FEATURES = CATEGORICAL_LOADED_FEATURES + CATEGORICAL_GENERATED_FEATURES
+TARGET_FEATURES = TARGET_LOADED_FEATURES + TARGET_GENERATED_FEATURES
+
 PROFILE_FEATURES = ['temperature_profile', 'depth_profile']
 QUALITY_FLAG_FEATURES = ['temperature_quality_flag', 'depth_quality_flag']
 ID_FEATURES = ['id']
@@ -160,6 +173,7 @@ XBT_CONVERTERS = {'temperature_profile': eval,
 
 FEATURE_PROCESSORS = {}
 FEATURE_PROCESSORS.update({f1: get_cat_ml_feature for f1 in CATEGORICAL_FEATURES})
+FEATURE_PROCESSORS.update({f1: get_target_ml_feature for f1 in TARGET_FEATURES})
 FEATURE_PROCESSORS.update({f1: get_ord_ml_feature for f1 in ORDINAL_FEATURES})
 FEATURE_PROCESSORS.update({f1: get_minmax_ml_feature for f1 in MINMAX_FEATURES})
 FEATURE_PROCESSORS.update({f1: get_num_ml_feature for f1 in NORMAL_DIST_FEATURES})
@@ -167,6 +181,9 @@ FEATURE_PROCESSORS.update({'lat': functools.partial(get_minmaxfixed_ml_feature, 
                            'lon': functools.partial(get_minmaxfixed_ml_feature, -180.0, 180.0),
                            'max_depth': functools.partial(get_minmaxfixed_ml_feature, 0.0, 2000.0),
                           })
+
+TARGET_PROCESSORS = {}
+FEATURE_PROCESSORS.update({f1: get_cat_ml_feature for f1 in TARGET_FEATURES})
 
 
 OUTPUT_FORMATTERS = {}
@@ -214,8 +231,8 @@ class XbtDataset():
         self._use_dask = use_dask
         self._load_profiles = load_profiles
         self._load_quality_flags = load_quality_flags
-        self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES
-        if self._load_profiles:
+        self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES + TARGET_LOADED_FEATURES
+        if self._load_profiles_:
             self.features_to_load += PROFILE_FEATURES
         if self._load_quality_flags:
             self.features_to_load += QUALITY_FLAG_FEATURES
@@ -232,6 +249,7 @@ class XbtDataset():
         self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(year_range[0], year_range[1]+1)]
         self.xbt_df = df
         self._feature_encoders = {}
+        self._target_encoders = {}
         self._output_formatters = OUTPUT_FORMATTERS
         if self.xbt_df is None:
             self._load_data() 
@@ -457,7 +475,47 @@ class XbtDataset():
     
     def update_split_from_fold(split_feature, fold_feature, fold_num):
         self.xbt_df[split_feature] = self.xbt_df[fold_feature_name] != fold_num
-    
+        
+    def _encode_dataset(self, encoders, features_to_process, processor_funcs, return_data)
+        ml_features = {}
+        column_indices = {}
+        column_start = 0
+            
+        for f1 in features_to_process:
+            create_encoder = False
+            try: 
+                encoder_f1 = encoders[f1]
+                if return_data:    
+                    mlf1 = encoder_f1.transform(self.xbt_df[[f1]])
+                else:
+                    mlf1 = None
+            except KeyError:
+                create_encoder = True
+                mlf1 = None
+            
+            if create_encoder:
+                try: 
+                    (encoder, mlf1) = processor_funcs[f1](self.xbt_df[[f1]], do_transform=return_data)
+                    encoders[f1] = encoder
+                except KeyError:
+                    raise RuntimeError(f'Attempting to preprocess unknown feature {f1}')
+            
+            if return_data:
+                ml_features[f1] = mlf1
+                column_indices[f1] = column_start
+                if len(mlf1.shape) > 1:
+                    column_start += mlf1.shape[1]
+                else:
+                    column_start += 1
+                
+        if return_data:
+            ml_ds = numpy.concatenate([v1 for k1,v1 in ml_features.items()], axis=1)
+        else:
+            ml_ds = None
+            
+        return encoders, ml_ds, ml_features, column_indices
+
+            
     def get_ml_dataset(self, refresh=False, return_data=True):
         """
         Get the data in the dataframe encoded for use bt a machine learning algorithm. This
@@ -476,45 +534,44 @@ class XbtDataset():
         
         
         """
-        ml_features = {}
         if refresh:
             self._feature_encoders = {}
-        column_indices = {}
-        column_start = 0
         features_to_process = self._get_features_to_process()
-            
-        for f1 in features_to_process:
-            create_encoder = False
-            try: 
-                encoder_f1 = self._feature_encoders[f1]
-                if return_data:    
-                    mlf1 = encoder_f1.transform(self.xbt_df[[f1]])
-                else:
-                    mlf1 = None
-            except KeyError:
-                create_encoder = True
-                mlf1 = None
-            
-            if create_encoder:
-                try: 
-                    (encoder, mlf1) = FEATURE_PROCESSORS[f1](self.xbt_df[[f1]], do_transform=return_data)
-                    self._feature_encoders[f1] = encoder
-                except KeyError:
-                    raise RuntimeError(f'Attempting to preprocess unknown feature {f1}')
-            
-            if return_data:
-                ml_features[f1] = mlf1
-                column_indices[f1] = column_start
-                if len(mlf1.shape) > 1:
-                    column_start += mlf1.shape[1]
-                else:
-                    column_start += 1
-                
-        if return_data:
-            ml_ds = numpy.concatenate([v1 for k1,v1 in ml_features.items()], axis=1)
-        else:
-            ml_ds = None
+        
+        encoders, ml_ds, ml_features, column_indices = self._encode_dataset(
+            self._feature_encoders, features_to_process, FEATURE_PROCESSORS, return_data)
+        
+        self._feature_encoders.update(encoders)
+        
         return (ml_ds, self._feature_encoders, ml_features, column_indices)
+    
+    def encode_target(self, refresh=False, return_data=True):
+        """
+        Get the data in the dataframe encoded for use bt a machine learning algorithm. This
+        is done on a per feature, and then the outputs are combined into a numpy array.
+        The enocding is delegated to the members of the FEATURE_PROCESSORS dictionary, which
+        contains an element for each data column. The essentially create a suitable scikit learn
+        object to encode the data e.g. OneHotEncoder for categorical data or MinMaxScaler for 
+        latitude and longitude.
+        
+        This function can also be used to just create encoders and not transform the data. This is useful
+        if you want consisent encoding of the data when looking at different subsets when not all values
+        in category may be present in the subset. This owrks because when a subset is created by any of the
+        subsetting functions (e.g. filter_obs or filter_features), the feature encoders dictionary is passed
+        to the new class. This means you will get the same encoding in the parent and child objects, so results
+        for different subsets can easily be compared.
+        
+        
+        """
+        if refresh:
+            self._target_encoders = {}
+        features_to_process = self._get_features_to_process()
+        
+        encoders, ml_ds, ml_features, column_indices = self._encode_dataset(
+            self._target_encoders, features_to_process, TARGET_PROCESSORS, return_data)
+        
+        return (ml_ds, self._feature_encoders, ml_features, column_indices)
+
     
     def get_cruise_stats(self):
         cruise_stats = {}
