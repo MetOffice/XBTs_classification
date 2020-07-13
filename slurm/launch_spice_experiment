@@ -1,0 +1,23 @@
+#!/bin/bash
+
+export XBT_EXEC=$1
+export XBT_EXP_NAME=$2
+export XBT_REPO_ROOT=$3
+export XBT_JSON_EXP=$4
+echo Launching experiment from file ${XBT_JSON_EXP}
+export XBT_INPUT_PATH=${SCRATCH}/xbt-data/csv_with_imeta/
+export XBT_OUTPUT_PATH=${SCRATCH}/xbt-data/experiment_outputs/
+
+export DATESTAMP=$(date '+%Y%m%d_%H%M%S')
+export MEM_ALLOC=32G
+export NUM_TASKS=4
+export OUTPATH=/data/users/shaddad/xbt_logs/xbt_exp_${XBT_EXP_NAME}_${DATESTAMP}_log.out
+export ERRPATH=/data/users/shaddad/xbt_logs/xbt_exp_${XBT_EXP_NAME}_${DATESTAMP}_log.err
+export JOB_TIME=360
+export JOB_NAME=xbt_job_${XBT_EXP_NAME}
+export XBT_QUEUE=normal
+
+echo $PWD
+echo running experiment from JSON file ${XBT_JSON_EXP}
+echo running using code at ${XBT_REPO_ROOT}
+sbatch  --job-name ${JOB_NAME} --qos ${XBT_QUEUE} --mem ${MEM_ALLOC} --ntasks ${NUM_TASKS} --output ${OUTPATH} --error ${ERRPATH} --time ${JOB_TIME}  ${XBT_REPO_ROOT}/slurm/run_spice_experiment.sh
