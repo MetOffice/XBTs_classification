@@ -1,5 +1,6 @@
 import os
 import csv
+import re
 
 import numpy
 
@@ -81,6 +82,15 @@ def process_year(year1, nc_dir, out_dir):
     out_path_template = os.path.join(out_dir, 'xbt_{year}.csv')
     out_path = out_path_template.format(year=year1)
     df_nc1 = process_xbt_file(path_nc, out_path)
+    
+def process_file(nc_path, out_dir, xbt_ix):
+    print(f'processing file {nc_path}')
+    out_fname = f'xbt_{xbt_ix}.csv'
+    out_path = os.path.join(out_dir, out_fname)
+    df_nc1 = process_xbt_file(nc_path, out_path)
+    
+def get_input_file_list(nc_dir, regex_str):
+    return [os.path.join(nc_dir,f1) for f1 in os.listdir(nc_dir) if re.search(regex_str, f1) ]
 
 def main():
     base_dir = os.environ['BASE_DIR']
@@ -88,14 +98,20 @@ def main():
     out_dir = os.path.join(base_dir, os.environ['OUTPUT_DIR_NAME'])
     start_year = int(os.environ['START_YEAR'])
     end_year = int(os.environ['END_YEAR'])
+    fname_prefix = os.environ['XBT_FNAME_PREFIX']
+    fname_suffix = os.environ['XBT_FNAME_SUFFIX']
     try:
         pool_size = int(os.environ['NTASKS'])
     except KeyError as ke1:
         pool_size = 1
+        
+    pattern1 = fname_prefix + '([\w\d\.]+)' + fname_suffix        
+    nc_path_list = get_input_file_list(nc_dir, pattern1)
+    print('found files to process:\n' + '\n'.join(nc_path_list) + '\n')
     print('Running {0} XBT tasks'.format(pool_size))
     pool1 = multiprocessing.Pool(pool_size)
-    arg_list = [(y1,nc_dir,out_dir) for y1 in range(start_year,end_year+1)]
-    pool1.starmap(process_year, arg_list)
+    arg_list = [(nc_path, out_dir, ix1) for ix1, nc_path in enumerate(nc_path_list)]
+    pool1.starmap(process_file, arg_list)
     pool1.close()
     pool1.join()
 
