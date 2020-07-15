@@ -93,8 +93,12 @@ def get_cat_ml_feature(cat_feature, do_transform=True):
         ml_feature = None    
     return (encoder, ml_feature)
 
+class XbtLabelEncoder(sklearn.preprocessing.LabelEncoder):
+    def transform(self, ferature_array):
+        return super(XbtLabelEncoder, self).transform(ferature_array).reshape(-1,1)
+
 def get_target_ml_feature(target_feature, do_transform=True):
-    encoder = sklearn.preprocessing.LabelEncoder()
+    encoder = XbtLabelEncoder()
     encoder.fit(target_feature)
     if do_transform:
         ml_feature = encoder.transform(target_feature)
@@ -183,7 +187,7 @@ FEATURE_PROCESSORS.update({'lat': functools.partial(get_minmaxfixed_ml_feature, 
                           })
 
 TARGET_PROCESSORS = {}
-FEATURE_PROCESSORS.update({f1: get_cat_ml_feature for f1 in TARGET_FEATURES})
+TARGET_PROCESSORS.update({f1: get_cat_ml_feature for f1 in TARGET_FEATURES})
 
 
 OUTPUT_FORMATTERS = {}
@@ -232,7 +236,7 @@ class XbtDataset():
         self._load_profiles = load_profiles
         self._load_quality_flags = load_quality_flags
         self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES + TARGET_LOADED_FEATURES
-        if self._load_profiles_:
+        if self._load_profiles:
             self.features_to_load += PROFILE_FEATURES
         if self._load_quality_flags:
             self.features_to_load += QUALITY_FLAG_FEATURES
@@ -328,6 +332,7 @@ class XbtDataset():
         subset_df = self._get_subset_df(filters, mode, check_type)
         filtered_dataset = XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
         filtered_dataset._feature_encoders = self._feature_encoders                
+        filtered_dataset._target_encoders = self._target_encoders                
         return filtered_dataset
 
     def filter_predictable(self, checkers):
@@ -356,6 +361,10 @@ class XbtDataset():
     def feature_encoders(self):
         return self._feature_encoders
     
+    @property
+    def target_encoders(self):
+        return self._target_encoders
+    
     def _get_features_to_process(self):
         features_to_process = [feature1 for feature1 in self.xbt_df.columns 
             if feature1 not in ML_EXCLUDE_LIST]
@@ -370,25 +379,27 @@ class XbtDataset():
                                               list(self.xbt_df[f1].unique()))
         return checkers
     
-    def output_data(self, out_path, add_ml_features=None):
+    def output_data(self, out_path, target_features=None):
         out_df = self.xbt_df
-        for feat1 in add_ml_features:
+        for feat1 in target_features:
             try:
                 out_df = out_df.join(
                     self._output_formatters[feat1](
-                        feat1, out_df[[feat1]], self._feature_encoders[feat1]))
+                        feat1, out_df[[feat1]], self._target_encoders[feat1]))
             except KeyError:
                 print(f'cannot output ML feature {feat1}, no formatter available.')
         out_df.to_csv(out_path)
     
-    def merge_features(self, other, features_to_merge, fill_values=None, encoders=None, output_formatters=None):
+    def merge_features(self, other, features_to_merge, fill_values=None, feature_encoders=None, target_encoders=None, output_formatters=None):
         merged_df = self.xbt_df.merge(other.xbt_df[['id'] + features_to_merge], on='id', how='outer')
         if fill_values:
             for f1, fv1 in fill_values.items():
                 merged_df[f1][merged_df[f1].isna()] = fv1
         self.xbt_df = merged_df
-        if encoders:
-            self._feature_encoders.update(encoders)
+        if feature_encoders:
+            self._feature_encoders.update(feature_encoders)
+        if target_encoders:
+            self._target_encoders.update(target_encoders)
         if output_formatters:
             self._output_formatters.update(output_formatters)
             
@@ -399,6 +410,7 @@ class XbtDataset():
         subset_df = self.xbt_df[feature_list] 
         filtered_dataset = XbtDataset(year_range=self.year_range, directory=self.directory, df = subset_df)
         filtered_dataset._feature_encoders = self._feature_encoders
+        filtered_dataset._target_encoders = self._target_encoders
         return filtered_dataset
     
     def train_test_split(self, train_fraction=0.8, random_state=None, features=None, refresh=False, split_name=TRAIN_SET_FEATURE):
@@ -447,8 +459,10 @@ class XbtDataset():
         
         xbt_train = XbtDataset(year_range=self.year_range, directory=self.directory, df = xbt_df_train)
         xbt_train._feature_encoders = self._feature_encoders
+        xbt_train._target_encoders = self._target_encoders
         xbt_test = XbtDataset(year_range=self.year_range, directory=self.directory, df = xbt_df_test)
         xbt_test._feature_encoders = self._feature_encoders
+        xbt_test._target_encoders = self._target_encoders
         return (xbt_train, xbt_test)
             
         
@@ -476,7 +490,7 @@ class XbtDataset():
     def update_split_from_fold(split_feature, fold_feature, fold_num):
         self.xbt_df[split_feature] = self.xbt_df[fold_feature_name] != fold_num
         
-    def _encode_dataset(self, encoders, features_to_process, processor_funcs, return_data)
+    def _encode_dataset(self, encoders, features_to_process, processor_funcs, return_data):
         ml_features = {}
         column_indices = {}
         column_start = 0
@@ -507,13 +521,14 @@ class XbtDataset():
                     column_start += mlf1.shape[1]
                 else:
                     column_start += 1
-                
+
         if return_data:
             ml_ds = numpy.concatenate([v1 for k1,v1 in ml_features.items()], axis=1)
+            
         else:
             ml_ds = None
             
-        return encoders, ml_ds, ml_features, column_indices
+        return ml_ds, encoders, ml_features, column_indices
 
             
     def get_ml_dataset(self, refresh=False, return_data=True):
@@ -538,7 +553,7 @@ class XbtDataset():
             self._feature_encoders = {}
         features_to_process = self._get_features_to_process()
         
-        encoders, ml_ds, ml_features, column_indices = self._encode_dataset(
+        ml_ds, encoders, ml_features, column_indices = self._encode_dataset(
             self._feature_encoders, features_to_process, FEATURE_PROCESSORS, return_data)
         
         self._feature_encoders.update(encoders)
@@ -567,10 +582,12 @@ class XbtDataset():
             self._target_encoders = {}
         features_to_process = self._get_features_to_process()
         
-        encoders, ml_ds, ml_features, column_indices = self._encode_dataset(
+        ml_ds, encoders, ml_features, column_indices = self._encode_dataset(
             self._target_encoders, features_to_process, TARGET_PROCESSORS, return_data)
         
-        return (ml_ds, self._feature_encoders, ml_features, column_indices)
+        self._target_encoders.update(encoders)
+        
+        return (ml_ds, self._target_encoders, ml_features, column_indices)
 
     
     def get_cruise_stats(self):
