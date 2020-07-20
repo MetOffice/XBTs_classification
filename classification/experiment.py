@@ -126,10 +126,10 @@ class ClassificationExperiment(object):
                                                    )
         self.generate_prediction(self.classifiers[0], feature_name)
         
-        # output predictions
         if write_predictions:
-            print('writing predictions to output csv file.')
-            out_name = self.experiment_name + '_' + self._exp_datestamp
+            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
+            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
+            print(f'output predictions to {out_path}')
             self.dataset.output_data(
                 os.path.join(self.exp_output_dir, 
                              OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
@@ -238,6 +238,8 @@ class ClassificationExperiment(object):
         # output predictions
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
+            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
+            print(f'output predictions to {out_path}')
             self.dataset.output_data(
                 os.path.join(self.exp_output_dir, 
                              OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
@@ -286,9 +288,10 @@ class ClassificationExperiment(object):
         print('generate vote count probabilities from the different trained classifiers')
         self.generate_vote_probabilities(result_feature_names)
         
-        print('output predictions')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
+            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
+            print(f'output predictions to {out_path}')
             self.dataset.output_data(
                 os.path.join(self.exp_output_dir, 
                              OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
