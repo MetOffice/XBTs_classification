@@ -131,8 +131,9 @@ class ClassificationExperiment(object):
             out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
             print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                out_path,
-                add_ml_features=[feature_name])
+                os.path.join(self.exp_output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
+                target_features=[feature_name])
             
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -240,8 +241,9 @@ class ClassificationExperiment(object):
             out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
             print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                out_path,
-                add_ml_features=[])
+                os.path.join(self.exp_output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
+                target_features=[])
                     
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -291,8 +293,9 @@ class ClassificationExperiment(object):
             out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
             print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                out_path,
-                add_ml_features=[])
+                os.path.join(self.exp_output_dir, 
+                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
+                target_features=[])
                     
         return self.classifiers
     
@@ -307,6 +310,7 @@ class ClassificationExperiment(object):
         
         # initialise the feature encoders on the labelled data
         _ = self.xbt_labelled.get_ml_dataset(return_data=False)
+        _ = self.xbt_labelled.filter_features(dataexploration.xbt_dataset.TARGET_FEATURES).encode_target(return_data=False)
 
     def _check_output_dir(self):
         if not self.exp_output_dir:
@@ -498,7 +502,7 @@ class ClassificationExperiment(object):
             imeta_df_year = self.generate_imeta(xbt_year)
             y_imeta = xbt_ds._feature_encoders[self.target_feature].transform(imeta_df_year[[self.target_feature]])
 
-            cats = list(xbt_ds._feature_encoders[self.target_feature].categories_[0])
+            cats = list(xbt_ds._feature_encoders[self.target_feature].classes_)
             prec_year, recall_year, f1_year, support_year = sklearn.metrics.precision_recall_fscore_support(
                 y_year, y_imeta, average='micro')
             prec_cat, recall_cat, f1_cat, support_cat = sklearn.metrics.precision_recall_fscore_support(
@@ -522,7 +526,7 @@ class ClassificationExperiment(object):
         metric_list = []
         for year in range(self.year_range[0],self.year_range[1]):
             xbt_year = xbt_ds.filter_obs({'year': year} )
-            cats = list(xbt_ds._feature_encoders[self.target_feature].categories_)[0]
+            cats = list(xbt_ds._feature_encoders[self.target_feature].classes_)
             if xbt_year.shape[0] > 0:
                 X_year = xbt_year.filter_features(self.input_features).get_ml_dataset()[0]
                 y_year = xbt_ds.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
@@ -586,7 +590,8 @@ class ClassificationExperiment(object):
                   }
         self.dataset.merge_features(self.xbt_predictable, [feature_name, flag_name],
                                fill_values = fv_dict,
-                               encoders={feature_name: self.xbt_labelled._feature_encoders[self.target_feature]},
+                               feature_encoders={feature_name: self.xbt_labelled._feature_encoders[self.target_feature]},
+                               target_encoders={feature_name: self.xbt_labelled._target_encoders[self.target_feature]},
                                 output_formatters={feature_name: dataexploration.xbt_dataset.cat_output_formatter})        
         
         # fill in imeta for unpredictable values
@@ -600,14 +605,14 @@ class ClassificationExperiment(object):
         # generate a prediction for each
         # sum the predictions from classifiers for each class for each obs
         # generate a one hot style probability of each class based by normalising the vote counts to sum to 1 (divide by num estimators)
-        vote_count = numpy.zeros([self.dataset.shape[0], len(self.dataset._feature_encoders[result_feature_names[0]].categories_[0])],dtype=numpy.float64)
+        vote_count = numpy.zeros([self.dataset.shape[0], len(self.dataset._feature_encoders[result_feature_names[0]].classes_)],dtype=numpy.float64)
         for res_name in result_feature_names:
             vote_count += self.dataset.filter_features([res_name]).get_ml_dataset()[0]
         vote_count /= float(len(result_feature_names))        
         vote_dict = {PROB_CAT_TEMPLATE.format(target=self.target_feature,
                                               clf=self.classifier_name,
                                               cat=cat1,
-                                             ): vote_count[:,ix1] for ix1, cat1 in enumerate(self.dataset._feature_encoders['instrument'].categories_[0])}
+                                             ): vote_count[:,ix1] for ix1, cat1 in enumerate(self.dataset._feature_encoders['instrument'].classes_)}
         vote_dict.update({'id': self.dataset['id']})
         vote_df = pandas.DataFrame(vote_dict)        
         self.dataset.xbt_df = self.dataset.xbt_df.merge(vote_df, on='id')
