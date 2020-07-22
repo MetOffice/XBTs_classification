@@ -307,7 +307,7 @@ class XbtDataset():
         unique values in the feature cruise_number, you will get a list
         with 10 values of cruise_number.
         """
-        df_values = pandas.DataFrame(self.xbt_df[feature].unique(), columns=[feature])
+        df_values = pandas.DataFrame({feature: self.xbt_df[feature].unique()})
         sample_values = list(df_values.sample(frac=fraction)[feature])
         return sample_values
         
