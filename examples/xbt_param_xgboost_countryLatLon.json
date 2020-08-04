@@ -1,0 +1,27 @@
+{"input_features": ["country", "lat", "lon", "max_depth", "year"],
+ "output_feature":"instrument",
+ "year_range": [1966,2015],
+ "parallel_jobs": -1,
+"split": {
+          "unseen_feature": "cruise_number",
+          "balance_features": ["year", "instrument"],
+          "num_unseen_splits": 5,
+          "num_training_splits": 5
+        },
+ "experiment_name": "decisionTree_countryLatLon",
+ "learner":{"module_name":"xgboost",
+            "python_class":"XGBClassifier",
+            "name": "XGBoost"
+           },
+ "tuning":{"param_grid":{"max_depth": [6, 3, 10], 
+                         "lambda": [1,2,5], 
+                         "n_estimators": [10, 100, 200],
+                         "learning_rate": [0.01, 0.1, 0.3, 0.5]
+                        },
+           "scoring":"recall_micro",
+           "n_jobs":1,
+           "return_train_score":true,
+           "return_estimator": true,
+           "cv_metrics": ["recall_micro", "precision_micro", "f1_micro"]
+          }
+}
