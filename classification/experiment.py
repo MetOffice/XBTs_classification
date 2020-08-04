@@ -344,12 +344,19 @@ class ClassificationExperiment(object):
         create a XBTDataset
         only load the specified input and target features, taken from the parameters JSON file
         """
-        self.dataset = dataexploration.xbt_dataset.XbtDataset(self.data_dir, 
-                                                              self.year_range, 
-                                                              nc_dir=self.preproc_dir,
-                                                              pp_prefix=self.preproc_params['prefix'],
-                                                              pp_suffix=self.preproc_params['suffix'],
-                                                             )
+        if self.preproc_dir is None:
+            self.dataset = dataexploration.xbt_dataset.XbtDataset(
+                self.data_dir, 
+                self.year_range, 
+            )
+        else:
+            self.dataset = dataexploration.xbt_dataset.XbtDataset(
+                self.data_dir, 
+                self.year_range, 
+                nc_dir=self.preproc_dir,
+                pp_prefix=self.preproc_params['prefix'],
+                pp_suffix=self.preproc_params['suffix'],
+            )
         self.xbt_labelled = self.dataset.filter_obs({'labelled': 'labelled'})
         
         # initialise the feature encoders on the labelled data

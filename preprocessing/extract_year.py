@@ -5,6 +5,7 @@ import argparse
 import multiprocessing
 import datetime
 import time
+import tempfile
 
 import numpy
 import netCDF4
@@ -126,10 +127,11 @@ def process_year(year1, nc_dir, out_dir):
     out_path = out_path_template.format(year=year1)
     df_nc1 = process_xbt_file(path_nc, out_path)
     
-def process_file(nc_path, out_dir, xbt_ix):
+def process_file(nc_path, out_dir, temp_dir, xbt_ix):
     print(f'processing file {nc_path}')
-    df_nc1 = process_xbt_file(nc_path, None) # None because we are not outputting from each file
-    return df_nc1
+    temp_out_path = os.path.join(temp_dir, f'xbt_temp_{xbt_ix}.csv')
+    _ = process_xbt_file(nc_path, temp_out_path) 
+    return temp_out_path
     
 def get_input_file_list(nc_dir, regex_str):
     return [os.path.join(nc_dir,f1) for f1 in os.listdir(nc_dir) if re.search(regex_str, f1) ]
@@ -159,25 +161,27 @@ def process_args():
     parser.add_argument('--suffix', help=help_msg, required=True)
     return parser.parse_args()    
 
-def do_wod_extract(nc_dir, out_dir, start_year, end_year, fname_prefix, fname_suffix, pool_size):
+def do_wod_extract(nc_dir, out_dir, temp_dir, start_year, end_year, fname_prefix, fname_suffix, pool_size):
     start1 = time.time()
     pattern1 = fname_prefix + '([\w\d\.]+)' + fname_suffix        
     nc_path_list = get_input_file_list(nc_dir, pattern1)
     print('found files to process:\n' + '\n'.join(nc_path_list) + '\n')
     print('Running {0} XBT tasks'.format(pool_size))
     pool1 = multiprocessing.Pool(pool_size)
-    arg_list = [(nc_path, out_dir, ix1) for ix1, nc_path in enumerate(nc_path_list)]
-    xbt_df_list = pool1.starmap(process_file, arg_list)
+    arg_list = [(nc_path, out_dir, temp_dir, ix1) for ix1, nc_path in enumerate(nc_path_list)]
+    xbt_tempfile_list = pool1.starmap(process_file, arg_list)
     pool1.close()
     pool1.join()
 
-    
+    print('reading in interediate files.')    
+    xbt_full = pandas.concat([pandas.read_csv(path1) for path1 in xbt_tempfile_list])
+    xbt_full = xbt_full[xbt_full.year > 0] # some profiles have year set to 0, ignore these profiles.
     if start_year is None:
         start_year = min(xbt_full.year.unique())
     if end_year is None:
         end_year = max(xbt_full.year.unique())
-    
-    xbt_full = pandas.concat(xbt_df_list)
+        
+    print('writing out per year files.')
     for year1 in range(start_year, end_year+1):
         print(f'writing year {year1}')
         year_out_path = os.path.join(out_dir, XBT_OUT_TEMPLATE.format(year=year1))
@@ -199,15 +203,18 @@ def wod_extract():
     fname_prefix =  user_args.prefix
     fname_suffix =  user_args.suffix
     pool_size = user_args.num_tasks
-        
-    do_wod_extract(nc_dir=nc_dir, 
-                   out_dir=out_dir, 
-                   start_year=start_year, 
-                   end_year=end_year, 
-                   fname_prefix=fname_prefix, 
-                   fname_suffix=fname_suffix, 
-                   pool_size=pool_size,
-                  )
+    temp_path = user_args.temp_path
+    # create a directory for intermediate files, which is automatically cleaned up.
+    with tempfile.TemporaryDirectory(dir=temp_path) as temp_dir:
+        do_wod_extract(nc_dir=nc_dir, 
+                       out_dir=out_dir, 
+                       temp_dir=temp_dir,
+                       start_year=start_year, 
+                       end_year=end_year, 
+                       fname_prefix=fname_prefix, 
+                       fname_suffix=fname_suffix, 
+                       pool_size=pool_size,
+                      )
             
         
 
