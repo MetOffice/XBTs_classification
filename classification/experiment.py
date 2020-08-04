@@ -74,18 +74,25 @@ class ClassificationExperiment(object):
         self._check_output_dir()
         self._generate_exp_datestamp()
 
+        start1 = time.time()
         print('loading dataset')
         self.load_dataset()
         # get train/test/unseen sets
         
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating splits')
         X_dict, y_dict, df_dict = self.get_train_test_unseen_sets()
             
         # fit classifier
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('training classifier')
         clf1 = self.train_classifier(X_dict['train'], y_dict['train'])
         
         # generate scores
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating metrics')
         metrics_train = self.generate_metrics(clf1, df_dict['train'], 'train')        
         metrics_test = self.generate_metrics(clf1, df_dict['test'], 'test')
@@ -94,6 +101,8 @@ class ClassificationExperiment(object):
         exp_results = exp_results.merge(metrics_unseen, on='year')
         
         # generate imeta
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating imeta output')
         exp_results = exp_results.merge(self.score_imeta(df_dict['train'], 'train'), on='year')
         exp_results = exp_results.merge(self.score_imeta(df_dict['test'], 'est'), on='year')
@@ -111,6 +120,8 @@ class ClassificationExperiment(object):
         
         
         # generate imeta algorithm results for the whole dataset
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating predictions for the whole dataset.')
         imeta_df = self.generate_imeta(self.dataset)
         imeta_df = imeta_df.rename(
@@ -126,6 +137,8 @@ class ClassificationExperiment(object):
                                                    )
         self.generate_prediction(self.classifiers[0], feature_name)
         
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
             out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
@@ -144,11 +157,17 @@ class ClassificationExperiment(object):
     def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
+        
         self._check_output_dir()
         self._generate_exp_datestamp()
         
+        start1 = time.time()
         print('loading dataset')
         self.load_dataset()
+        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        
         # get train/test/unseen sets
         print('generating splits')
         self.xbt_labelled.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)        
@@ -156,6 +175,9 @@ class ClassificationExperiment(object):
         X_labelled = self.xbt_labelled.filter_features(self.input_features).get_ml_dataset()[0]
         y_labelled = self.xbt_labelled.filter_features([self.target_feature]).get_ml_dataset()[0]
         
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+
         # create objects for cross validation and hyperparameter tuning
         # first set up objects for the inner cross validation, which run for each
         # set of hyperparameters in the grid search.
@@ -169,6 +191,7 @@ class ClassificationExperiment(object):
             scoring=self._tuning_dict['scoring'],
             cv=self.num_training_splits,
         )
+        
         
         # now run the outer cross-validation with the grid search HPT as the classifier,
         # so for each split, HPT will be run with CV on each set of hyperparameters
@@ -184,10 +207,13 @@ class ClassificationExperiment(object):
             n_jobs=self._n_jobs,
         )        
 
+        
         self._cv_output = scores
         self.classifiers = {split_num: est1 
                             for split_num, est1 in enumerate(scores['estimator'])}
        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('calculating metrics')
         metrics_list = {}
         for split_num, estimator in self.classifiers.items():
@@ -205,7 +231,9 @@ class ClassificationExperiment(object):
                 metrics_df_merge = pandas.merge(metrics_df_merge, metrics1)            
         self.results = metrics_df_merge
 
-        # output results to a file
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('output results to a file')
         if write_results:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
             self.results.to_csv(
@@ -222,7 +250,9 @@ class ClassificationExperiment(object):
             })
         self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
         
-        # run prediction on full dataset
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print(' run prediction on full dataset')
         result_feature_names = []
         for split_num, estimator in self.classifiers.items():
             res_name = RESULT_FEATURE_TEMPLATE.format(
@@ -235,7 +265,9 @@ class ClassificationExperiment(object):
         # generate vote count probabilities from the different trained classifiers
         self.generate_vote_probabilities(result_feature_names)
         
-        # output predictions
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('output predictions')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
             out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
