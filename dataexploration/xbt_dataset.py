@@ -7,6 +7,7 @@ import dask.dataframe
 import numpy
 import sklearn.preprocessing
 
+import preprocessing.extract_year
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
 
 INSTRUMENT_REGEX_STRING = 'XBT[:][\s](?P<model>[\w\s;:-]+)([\s]*)([(](?P<manufacturer>[\w\s.:;-]+)[)])?'
@@ -48,18 +49,6 @@ def check_value_found(ref, value):
 
 def check_cat_value_allowed(allowed, value):
     return value in allowed
-
-def get_year(dt_str):
-    try:
-        dt1 = datetime.datetime.strptime(dt_str,'%Y%m%d')
-        year = dt1.year
-        month = dt1.month
-        day = dt1.day
-    except ValueError:
-        year = 0
-        month=0
-        day = 0
-    return year, month, day
 
 def normalise_lat(feature_lat, do_transform=True):
     encoder = sklearn.preprocessing.MinMaxScaler()
@@ -156,16 +145,14 @@ CATEGORICAL_LOADED_FEATURES = [
 CATEGORICAL_GENERATED_FEATURES = []
 CATEGORICAL_FEATURES = CATEGORICAL_LOADED_FEATURES + CATEGORICAL_GENERATED_FEATURES
 
-TARGET_LOADED_FEATURES = [ 'instrument', ]
-TARGET_GENERATED_FEATURES = [
-    'model', 'manufacturer',
-]
+TARGET_LOADED_FEATURES = ['instrument', 'model', 'manufacturer', ]
+TARGET_GENERATED_FEATURES = []
 TARGET_FEATURES = TARGET_LOADED_FEATURES + TARGET_GENERATED_FEATURES
 
 PROFILE_FEATURES = ['temperature_profile', 'depth_profile']
 QUALITY_FLAG_FEATURES = ['temperature_quality_flag', 'depth_quality_flag']
 ID_FEATURES = ['id']
-ORDINAL_FEATURES = ['year']
+ORDINAL_FEATURES = ['year', 'month', 'day']
 MINMAX_FEATURES = ['max_depth']
 NORMAL_DIST_FEATURES = []
 CUSTOM_FEATURES = ['lat', 'lon']
@@ -213,14 +200,6 @@ def do_concat(df_list, axis=1, ignore_index=True):
 
 
 def do_preprocessing(xbt_df):
-    # Model and manufacturer are stored in the CSV file as a single string called "instrument type", separating into 
-    # seprate columns for learning these separately 
-    xbt_df['model'] = xbt_df.instrument.apply(get_model)
-    xbt_df['manufacturer'] = xbt_df.instrument.apply(get_manufacturer)
-    date_columns = ['year','month','day']
-    date_elements = pandas.DataFrame(list(xbt_df.date.apply(str).apply(get_year)), columns=date_columns)
-    for col1 in date_columns:
-        xbt_df[col1] = date_elements[col1]
     # exclude bad dates
     xbt_df = xbt_df[xbt_df['year'] != 0]
     # exclude bad depths
@@ -231,11 +210,11 @@ def do_preprocessing(xbt_df):
 
 
 class XbtDataset():
-    def __init__(self, directory, year_range, df=None, use_dask=False, load_profiles=False, load_quality_flags=False):
+    def __init__(self, directory, year_range, df=None, use_dask=False, load_profiles=False, load_quality_flags=False, nc_dir=None, pp_prefix='', pp_suffix=''):
         self._use_dask = use_dask
         self._load_profiles = load_profiles
         self._load_quality_flags = load_quality_flags
-        self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES + TARGET_LOADED_FEATURES
+        self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES + TARGET_LOADED_FEATURES + ORDINAL_FEATURES
         if self._load_profiles:
             self.features_to_load += PROFILE_FEATURES
         if self._load_quality_flags:
@@ -248,9 +227,15 @@ class XbtDataset():
             self._read_func = read_csv
             self._preproc_func = do_preprocessing
             self._concat_func = do_concat
+        self.nc_directory = nc_dir # if this is defined then do a preprocessing step
+        self.pp_prefix = pp_prefix
+        self.pp_suffix = pp_suffix
+        
         self.directory = directory
         self.year_range = year_range
-        self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(year_range[0], year_range[1]+1)]
+        
+        #this will be created in load files, which may happen after preprocessing
+        self.dataset_files = []
         self.xbt_df = df
         self._feature_encoders = {}
         self._target_encoders = {}
@@ -259,6 +244,17 @@ class XbtDataset():
             self._load_data() 
 
     def _load_data(self):
+        if self.nc_directory is not None:
+            preprocessing.extract_year.do_wod_extract(
+                nc_dir=self.nc_directory, 
+                out_dir=self.directory, 
+                start_year=self.year_range[0], 
+                end_year=self.year_range[1], 
+                fname_prefix=self.pp_prefix, 
+                fname_suffix=self.pp_suffix, 
+                pool_size=preprocessing.extract_year.DEFAULT_PREPROC_TASKS,                
+            )
+        self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(self.year_range[0], self.year_range[1]+1)]            
         df_in_list = [self._read_func(year_csv_path, self.features_to_load) for year_csv_path in self.dataset_files]
         df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
         self.xbt_df = self._concat_func(df_processed)
