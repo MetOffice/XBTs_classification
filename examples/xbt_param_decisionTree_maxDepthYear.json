@@ -8,7 +8,7 @@
           "num_unseen_splits": 5,
           "num_training_splits": 5
         },
- "experiment_name": "decisionTree_country",
+ "experiment_name": "decisionTree_maxDepthYear",
  "learner":{"module_name":"sklearn.tree",
             "python_class":"DecisionTreeClassifier",
             "name": "DecisionTree"

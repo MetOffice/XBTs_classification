@@ -5,21 +5,17 @@
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
-          "num_unseen_splits": 5,
-          "num_training_splits": 5
+          "num_unseen_splits": 3,
+          "num_training_splits": 3
         },
  "experiment_name": "mlp_country",
  "learner":{"module_name":"sklearn.neural_network",
             "python_class":"MLPClassifier",
             "name": "MLP"
            },
- 
-parameters = {'solver': ['lbfgs'], 'max_iter': [1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000 ], 'alpha': 10.0 ** -np.arange(1, 10), 'hidden_layer_sizes':np.arange(10, 15), 'random_state':[0,1,2,3,4,5,6,7,8,9]}
-c 
- "tuning":{"param_grid":{"hidden_layer_sizes": [ (10, 10, 10,), (20,20,), (50,50,), (100,)], 
-                         "activation": ["tanh", "relu", "logistic"],
-                         "alpha": [1e-5, 1e-4, 5e-4, 1e-3, 5e-3],
-                         "max_iter": [500]
+ "tuning":{"param_grid":{ "hidden_layer_sizes": [[10, 10]],
+                         "alpha": [1e-4],
+                         "max_iter": [1000]
                         },
            "scoring":"recall_micro",
            "n_jobs":1,
