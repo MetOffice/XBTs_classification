@@ -42,10 +42,11 @@ class ClassificationExperiment(object):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
-    def __init__(self, json_descriptor, data_dir, output_dir):
+    def __init__(self, json_descriptor, data_dir, output_dir, preproc_dir=None):
         # assign arguments
         self.data_dir = data_dir
         self.root_output_dir = output_dir
+        self.preproc_dir = preproc_dir
         self.json_descriptor = json_descriptor
         
         # initialise to None where appropriate
@@ -62,6 +63,13 @@ class ClassificationExperiment(object):
         # load experiment definition from json file
         self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
         self.read_json_file()
+        
+        if preproc_dir is not None:
+            if self.preproc_params is None:
+                raise RuntimeError('preprocessing parameters must be specified in the JSON '
+                                   'experiment definition if preprocessing is requested '
+                                   'by specify a directory for files to be preprocessed.')
+        
         self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
         
         
@@ -76,8 +84,8 @@ class ClassificationExperiment(object):
 
         print('loading dataset')
         self.load_dataset()
-        # get train/test/unseen sets
         
+        # get train/test/unseen sets
         print('generating splits')
         X_dict, y_dict, df_dict = self.get_train_test_unseen_sets()
             
@@ -302,7 +310,12 @@ class ClassificationExperiment(object):
         create a XBTDataset
         only load the specified input and target features, taken from the parameters JSON file
         """
-        self.dataset = dataexploration.xbt_dataset.XbtDataset(self.data_dir, self.year_range)
+        self.dataset = dataexploration.xbt_dataset.XbtDataset(self.data_dir, 
+                                                              self.year_range, 
+                                                              nc_dir=self.preproc_dir,
+                                                              pp_prefix=self.preproc_params['prefix'],
+                                                              pp_suffix=self.preproc_params['suffix'],
+                                                             )
         self.xbt_labelled = self.dataset.filter_obs({'labelled': 'labelled'})
         
         # initialise the feature encoders on the labelled data
@@ -344,6 +357,12 @@ class ClassificationExperiment(object):
         self.unseen_fraction = 1.0 / self.num_unseen_splits
         self.unseen_feature = self.json_params['split']['unseen_feature']
         self.balance_features = self.json_params['split']['balance_features']
+        
+        try:
+            self.preproc_params = self.json_params['preproc']
+        except KeyError:
+            self.preproc_params = None            
+        
         
         self.return_estimator =  self.json_params['tuning']['return_estimator']
         self.return_train_score =  self.json_params['tuning']['return_train_score']
