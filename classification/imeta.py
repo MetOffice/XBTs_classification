@@ -6,6 +6,9 @@ import os
 import datetime
 import functools
 import argparse
+import time
+import pandas
+import sklearn.metrics
 
 import dataexploration.xbt_dataset
 
@@ -81,13 +84,20 @@ def _get_arguments():
     return parser.parse_args()    
 
 def generate_imeta():
+    start_time = time.time()
+    
     user_args = _get_arguments()
     print('reading data')
+    date_range = (user_args.start_year, user_args.end_year)
     xbt_full = dataexploration.xbt_dataset.XbtDataset(user_args.input_path, 
-                                                       (user_args.start_year, user_args.end_year) )
+                                                      date_range )
+    # generate encoders for getting ML formatted data
     _ = xbt_full.get_ml_dataset(return_data=False)
-    print('running imeta algorithm on dataset')
+    _ = xbt_full.filter_features(dataexploration.xbt_dataset.TARGET_FEATURES).encode_target(return_data=False)    
+    
+    print(f'running imeta algorithm on dataset (elapsed {time.time()-start_time} seconds)')
     imeta_classes = xbt_full.xbt_df.apply(imeta_classification, axis=1)                                                      
+    imeta_instrument = imeta_classes.apply(lambda t1: f'XBT: {t1[0]} ({t1[1]})') 
     imeta_feature = 'instrument_imeta'
     instrument_feature = 'instrument'
     xbt_full.xbt_df[imeta_feature] = imeta_classes
@@ -95,15 +105,17 @@ def generate_imeta():
     xbt_full._target_encoders[imeta_feature] = xbt_full._target_encoders[instrument_feature]
     xbt_full._output_formatters[imeta_feature] = xbt_full._output_formatters[instrument_feature]
     
-    print('generating per year classification metrics for algorithm.')
+    print(f'generating per year classification metrics for algorithm. (elapsed {time.time()-start_time} seconds)')
     imeta_results = []
-    for year in range(env_date_ranges[environment][0],env_date_ranges[environment][1]):
-        y_imeta_instr = instr_encoder.transform(pandas.DataFrame(imeta_instrument[xbt_labelled.xbt_df.year == year]))
-        xbt_instr1 = instr_encoder.transform(pandas.DataFrame(xbt_labelled.xbt_df[xbt_labelled.xbt_df.year == year].instrument))
+    instr_encoder = xbt_full._feature_encoders[instrument_feature]
+    for year in range(user_args.start_year, user_args.end_year):
+        y_imeta_instr = instr_encoder.transform(pandas.DataFrame(imeta_instrument[xbt_full.xbt_df.year == year]))
+        xbt_instr1 = instr_encoder.transform(pandas.DataFrame(xbt_full.xbt_df[xbt_full.xbt_df.year == year].instrument))
         (im_pr_instr, im_rec_instr, im_f1_instr, im_sup_instr) = sklearn.metrics.precision_recall_fscore_support(xbt_instr1, y_imeta_instr,average='micro')
         imeta_results += [{'year': year,
                        'imeta_instr_recall': im_rec_instr,
                        'imeta_instr_precision': im_pr_instr,
+                       'imeta_instr_f1': im_f1_instr,
                       }]
     
     imeta_res_df = pandas.DataFrame.from_records(imeta_results)
@@ -112,16 +124,16 @@ def generate_imeta():
     metrics_out_path = os.path.join(user_args.output_path,
                                             'imeta_metrics.csv',
                                            )
-    print(f'writing metrics to file {metrics_out_path}')
+    print(f'writing metrics to file {metrics_out_path} (elapsed {time.time()-start_time} seconds)')
     imeta_res_df.to_csv(metrics_out_path)
     
     # write ID and imeta output to a CSV file
     classifications_out_path = os.path.join(user_args.output_path,
                                             'imeta_classifications.csv',
                                            )
-    print(f'writing classifications to file {classifications_out_path}')
+    print(f'writing classifications to file {classifications_out_path} (elapsed {time.time()-start_time} seconds)')
     xbt_full.filter_features(dataexploration.xbt_dataset.ID_FEATURES + [imeta_feature]).output_data
-    print('imeta generation complete.')
+    print('imeta generation complete. (elapsed {time.time()-start_time} seconds)')
     
     
                                                       
