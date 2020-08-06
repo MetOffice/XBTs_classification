@@ -178,7 +178,7 @@ TARGET_PROCESSORS.update({f1: get_cat_ml_feature for f1 in TARGET_FEATURES})
 
 
 OUTPUT_FORMATTERS = {}
-OUTPUT_FORMATTERS.update({f1: cat_output_formatter for f1 in CATEGORICAL_FEATURES})
+OUTPUT_FORMATTERS.update({f1: cat_output_formatter for f1 in CATEGORICAL_FEATURES + TARGET_LOADED_FEATURES})
 
 
 TRAIN_SET_FEATURE = 'training_set'
@@ -296,15 +296,22 @@ class XbtDataset():
         subset_df = self.xbt_df[included_in_subset] 
         return subset_df
     
-    def sample_feature_values(self, feature, fraction):
+    def sample_feature_values(self, feature, fraction, split_feature=None):
         """
         Get a sample of the unique values in a categorical feature. For example,
         if the feature is cruise_number, the fraction is 0.1 and there are 100 
         unique values in the feature cruise_number, you will get a list
         with 10 values of cruise_number.
         """
-        df_values = pandas.DataFrame(self.xbt_df[feature].unique(), columns=[feature])
-        sample_values = list(df_values.sample(frac=fraction)[feature])
+        if split_feature is None:
+            df_values = pandas.DataFrame(self.xbt_df[feature].unique(), columns=[feature])
+            sample_values = list(df_values.sample(frac=fraction)[feature])
+        else:
+            sample_values = []
+            for sfv1 in self.xbt_df[split_feature].unique():
+                df_values = pandas.DataFrame(self.xbt_df[self.xbt_df[split_feature] == sfv1][feature].unique(), 
+                                             columns=[feature])
+                sample_values += list(df_values.sample(frac=fraction)[feature])
         return sample_values
         
     def filter_obs(self, filters, mode='include', check_type='match_subset'):
@@ -375,7 +382,7 @@ class XbtDataset():
                                               list(self.xbt_df[f1].unique()))
         return checkers
     
-    def output_data(self, out_path, target_features=None):
+    def output_data(self, out_path, target_features=[]):
         out_df = self.xbt_df
         for feat1 in target_features:
             try:
