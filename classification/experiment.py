@@ -663,7 +663,7 @@ class ClassificationExperiment(object):
         # generate a one hot style probability of each class based by normalising the vote counts to sum to 1 (divide by num estimators)
         vote_count = numpy.zeros([self.dataset.shape[0], len(self.dataset._feature_encoders[result_feature_names[0]].classes_)],dtype=numpy.float64)
         for res_name in result_feature_names:
-            vote_count += self.dataset.filter_features([res_name]).get_ml_dataset()[0]
+            vote_count += self.dataset.filter_features([res_name]).encode_target()[0]
         vote_count /= float(len(result_feature_names))        
         vote_dict = {PROB_CAT_TEMPLATE.format(target=self.target_feature,
                                               clf=self.classifier_name,
