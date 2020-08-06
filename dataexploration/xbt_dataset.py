@@ -375,7 +375,7 @@ class XbtDataset():
                                               list(self.xbt_df[f1].unique()))
         return checkers
     
-    def output_data(self, out_path, target_features=None):
+    def output_data(self, out_path, target_features=[]):
         out_df = self.xbt_df
         for feat1 in target_features:
             try:

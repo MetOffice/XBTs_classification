@@ -10,6 +10,7 @@ import time
 import pandas
 import sklearn.metrics
 
+import xbt.common
 import dataexploration.xbt_dataset
 
 def get_depth_category(depth_list, depth_value):
@@ -84,6 +85,7 @@ def _get_arguments():
     return parser.parse_args()    
 
 def generate_imeta():
+    datestamp = xbt.common.generate_datestamp()
     start_time = time.time()
     
     user_args = _get_arguments()
@@ -113,26 +115,27 @@ def generate_imeta():
         xbt_instr1 = instr_encoder.transform(pandas.DataFrame(xbt_full.xbt_df[xbt_full.xbt_df.year == year].instrument))
         (im_pr_instr, im_rec_instr, im_f1_instr, im_sup_instr) = sklearn.metrics.precision_recall_fscore_support(xbt_instr1, y_imeta_instr,average='micro')
         imeta_results += [{'year': year,
-                       'imeta_instr_recall': im_rec_instr,
-                       'imeta_instr_precision': im_pr_instr,
-                       'imeta_instr_f1': im_f1_instr,
+                       'imeta_instr_recall_all': im_rec_instr,
+                       'imeta_instr_precision_all': im_pr_instr,
+                       'imeta_instr_f1_all': im_f1_instr,
                       }]
     
     imeta_res_df = pandas.DataFrame.from_records(imeta_results)
     
     # write metrics to imeta table
     metrics_out_path = os.path.join(user_args.output_path,
-                                            'imeta_metrics.csv',
+                                            f'xbt_metrics_imeta.csv',
                                            )
     print(f'writing metrics to file {metrics_out_path} (elapsed {time.time()-start_time} seconds)')
     imeta_res_df.to_csv(metrics_out_path)
     
     # write ID and imeta output to a CSV file
     classifications_out_path = os.path.join(user_args.output_path,
-                                            'imeta_classifications.csv',
+                                            f'xbt_classifications_imeta.csv',
                                            )
     print(f'writing classifications to file {classifications_out_path} (elapsed {time.time()-start_time} seconds)')
-    xbt_full.filter_features(dataexploration.xbt_dataset.ID_FEATURES + [imeta_feature]).output_data
+    xbt_full.filter_features(dataexploration.xbt_dataset.ID_FEATURES + [imeta_feature]).output_data(
+        classifications_out_path, )
     print('imeta generation complete. (elapsed {time.time()-start_time} seconds)')
     
     

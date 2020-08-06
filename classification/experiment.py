@@ -11,9 +11,11 @@ import pandas
 import time
 import sklearn.metrics
 
+
 from preprocessing.data_preprocessing import  DataPreprocessor
 pandas.options.mode.chained_assignment = None
 
+import xbt.common
 import dataexploration.xbt_dataset
 from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
@@ -21,7 +23,6 @@ from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
 OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{name}.csv'
 CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
-DATESTAMP_TEMPLATE = '{dt.year:04d}{dt.month:02d}{dt.day:02d}_{dt.hour:02d}{dt.minute:02d}'
 
 UNSEEN_FOLD_NAME = 'unseen_fold'
 RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
@@ -73,14 +74,12 @@ class ClassificationExperiment(object):
         self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
         
         
-    def _generate_exp_datestamp(self):
-        self._exp_datestamp = DATESTAMP_TEMPLATE.format(dt=datetime.datetime.now())
         
     def run_single_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
         self._check_output_dir()
-        self._generate_exp_datestamp()
+        self._exp_datestamp = xbt.common.generate_datestamp()
 
         start1 = time.time()
         print('loading dataset')
@@ -166,7 +165,7 @@ class ClassificationExperiment(object):
         """
         
         self._check_output_dir()
-        self._generate_exp_datestamp()
+        self._exp_datestamp = xbt.common.generate_datestamp()
         
         start1 = time.time()
         print('loading dataset')
@@ -294,7 +293,7 @@ class ClassificationExperiment(object):
         """
         """
         self._check_output_dir()
-        self._generate_exp_datestamp()
+        self._exp_datestamp = xbt.common.generate_datestamp()
         
         print('loading dataset')
         self.load_dataset()
