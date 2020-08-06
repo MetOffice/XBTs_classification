@@ -178,7 +178,7 @@ TARGET_PROCESSORS.update({f1: get_cat_ml_feature for f1 in TARGET_FEATURES})
 
 
 OUTPUT_FORMATTERS = {}
-OUTPUT_FORMATTERS.update({f1: cat_output_formatter for f1 in CATEGORICAL_FEATURES})
+OUTPUT_FORMATTERS.update({f1: cat_output_formatter for f1 in CATEGORICAL_FEATURES + TARGET_LOADED_FEATURES})
 
 
 TRAIN_SET_FEATURE = 'training_set'
