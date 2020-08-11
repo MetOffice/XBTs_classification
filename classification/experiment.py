@@ -27,6 +27,8 @@ CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
 UNSEEN_FOLD_NAME = 'unseen_fold'
 RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
 PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat}'
+MAX_PROB_FEATURE_NAME = '{target}_max_prob'
+
 
 class NumpyEncoder(json.JSONEncoder):
     """Encoder to print the result of tuning into a json file"""
@@ -61,6 +63,7 @@ class ClassificationExperiment(object):
         self.classifier_fnames = None
         self.experiment_description_dir = None
         
+        self.ens_unseen_fraction = 0.1        
         # load experiment definition from json file
         self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
         self.read_json_file()
@@ -174,12 +177,17 @@ class ClassificationExperiment(object):
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
         
+        
         # get train/test/unseen sets
         print('generating splits')
-        self.xbt_labelled.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)        
+        ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature, fraction=self.ens_unseen_fraction, split_feature='year')    
+        xbt_ens_unseen = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers}, mode='include', check_type='in_filter_set')
+        xbt_ens_working = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers}, mode='exclude', check_type='in_filter_set')        
         
-        X_labelled = self.xbt_labelled.filter_features(self.input_features).get_ml_dataset()[0]
-        y_labelled = self.xbt_labelled.filter_features([self.target_feature]).get_ml_dataset()[0]
+        X_ens_working = xbt_ens_working.filter_features(self.input_features).get_ml_dataset()[0]
+        y_ens_working = xbt_ens_working.filter_features([self.target_feature]).get_ml_dataset()[0]
+        
+        xbt_ens_working.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)
         
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
@@ -204,8 +212,8 @@ class ClassificationExperiment(object):
         print('running cross validation')
         scores = sklearn.model_selection.cross_validate(
             grid_search_cv,
-            X_labelled, y_labelled, 
-            groups=self.xbt_labelled[UNSEEN_FOLD_NAME], 
+            X_ens_working, y_ens_working, 
+            groups=xbt_ens_working[UNSEEN_FOLD_NAME], 
             cv=group_cv1,
             return_estimator=self.return_estimator,
             return_train_score=self.return_train_score,
@@ -218,15 +226,28 @@ class ClassificationExperiment(object):
         self.classifiers = {split_num: est1 
                             for split_num, est1 in enumerate(scores['estimator'])}
        
+        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating probabilities for evaluation.')
+        
+        (df_ens_working, 
+         df_ens_unseen, 
+         metrics_df_ens) =self._evaluate_vote_probs(xbt_ens_working,
+                                                    xbt_ens_unseen,
+                                                    scores,
+                                                   )
+        
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
         print('calculating metrics')
         metrics_list = {}
         for split_num, estimator in self.classifiers.items():
-            xbt_train = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
-            xbt_test = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
+            xbt_train = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
+            xbt_test = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
             train_metrics = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num))
             test_metrics = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num))
+            unseen_metrics = self.generate_metrics(estimator, xbt_ens_unseen, 'unseen_{0}'.format(split_num) )            
             metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')        
 
         metrics_df_merge = None
@@ -234,7 +255,8 @@ class ClassificationExperiment(object):
             if metrics_df_merge is None:
                 metrics_df_merge = metrics1
             else:
-                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1)            
+                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1, on='year')     
+        metrics_df_merge = pandas.merge(metrics_df_merge, metrics_df_ens, on='year')
         self.results = metrics_df_merge
 
         duration1 = time.time() - start1
@@ -665,13 +687,91 @@ class ClassificationExperiment(object):
         for res_name in result_feature_names:
             vote_count += self.dataset.filter_features([res_name]).encode_target()[0]
         vote_count /= float(len(result_feature_names))        
+        
+        res_full_ensemble = vote_count.argmax(axis=1)
+        instr_res_full_ensemble = self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_full_ensemble)        
+        
         vote_dict = {PROB_CAT_TEMPLATE.format(target=self.target_feature,
                                               clf=self.classifier_name,
                                               cat=cat1,
                                              ): vote_count[:,ix1] for ix1, cat1 in enumerate(self.dataset._feature_encoders['instrument'].classes_)}
-        vote_dict.update({'id': self.dataset['id']})
+        vote_dict.update({'id': self.dataset['id'],
+                          MAX_PROB_FEATURE_NAME.format(target=self.target_feature): instr_res_full_ensemble,
+                         })
         vote_df = pandas.DataFrame(vote_dict)        
         self.dataset.xbt_df = self.dataset.xbt_df.merge(vote_df, on='id')
+        
+
+    def _evaluate_vote_probs(self, xbt_ens_working, xbt_ens_unseen, scores):
+        res_ens_working = {'id': xbt_ens_working.xbt_df['id']}
+        res_ens_unseen = {'id': xbt_ens_unseen.xbt_df['id']}
+        vote_count_working = numpy.zeros([xbt_ens_working.shape[0], self.xbt_labelled._feature_encoders[self.target_feature].classes_.shape[0]],dtype=numpy.float64)
+        vote_count_unseen = numpy.zeros([xbt_ens_unseen.shape[0], self.xbt_labelled._feature_encoders[self.target_feature].classes_.shape[0]],dtype=numpy.float64)
+        result_feature_names = []
+        # classifications_df = None
+        for split_num, estimator in enumerate(scores['estimator']):
+            res_name = RESULT_FEATURE_TEMPLATE.format(
+                target=self.target_feature,
+                clf=self.classifier_name,
+                split_num=split_num)
+            result_feature_names += [res_name]
+            res_ml1_working = estimator.predict(xbt_ens_working.filter_features(self.input_features).get_ml_dataset()[0])
+            res2_working = xbt_ens_working._feature_encoders[self.target_feature].inverse_transform(res_ml1_working).reshape(-1,1)
+            res_ens_working[res_name] = res2_working.reshape(-1)
+            vote_count_working += xbt_ens_working._target_encoders[self.target_feature].transform(res2_working)
+    
+            res_ml1_unseen = estimator.predict(xbt_ens_unseen.filter_features(self.input_features).get_ml_dataset()[0])
+            res2_unseen = xbt_ens_unseen._feature_encoders[self.target_feature].inverse_transform(res_ml1_unseen).reshape(-1,1)
+            res_ens_unseen[res_name] = res2_unseen.reshape(-1)
+            vote_count_unseen += xbt_ens_unseen._target_encoders[self.target_feature].transform(res2_unseen)
+    
+        df_ens_working = pandas.DataFrame(res_ens_working)
+        df_ens_unseen = pandas.DataFrame(res_ens_unseen)
+
+        vote_count_working /= float(len(res_ens_working.keys()))    
+        vote_count_unseen /= float(len(res_ens_working.keys()))         
+        
+        max_prob_feature_name = f'{self.target_feature}_max_prob'
+        res_working_ensemble = vote_count_working.argmax(axis=1)
+        instr_res_working_ensemble = self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_working_ensemble)
+        df_ens_working[max_prob_feature_name] = instr_res_working_ensemble
+        res_unseen_ensemble = vote_count_unseen.argmax(axis=1)
+        instr_res_unseen_ensemble = self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_unseen_ensemble)
+        df_ens_unseen[max_prob_feature_name] = instr_res_unseen_ensemble
+        
+        df_ens_working = pandas.merge(df_ens_working, xbt_ens_working.xbt_df[['id', 'year']])
+        df_ens_unseen = pandas.merge(df_ens_unseen, xbt_ens_unseen.xbt_df[['id', 'year']])        
+
+        metric_list_ens = []
+        for year in range(self.year_range[0],self.year_range[1]):
+            y_ens_working = xbt_ens_working.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
+            y_ens_unseen = xbt_ens_unseen.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
+
+            y_res_working = xbt_ens_working._feature_encoders[self.target_feature].transform( df_ens_working[df_ens_working.year == year]['instrument_max_prob'])    
+            y_res_unseen = xbt_ens_unseen._feature_encoders[self.target_feature].transform( df_ens_unseen[df_ens_unseen.year == year]['instrument_max_prob'])    
+            cats = list(xbt_ens_working._feature_encoders[self.target_feature].classes_)
+            prec_ens_working, recall_ens_working, f1_ens_working, support_ens_working = sklearn.metrics.precision_recall_fscore_support(
+                y_ens_working, y_res_working, average='micro', labels=range(0,len(cats)))
+            prec_ens_unseen, recall_ens_unseen, f1_ens_unseen, support_ens_unseen = sklearn.metrics.precision_recall_fscore_support(
+                y_ens_unseen, y_res_unseen, average='micro', labels=range(0,len(cats)))
+            column_template = '{metric}_{data}_{subset}'
+            metric_dict = {'year': year,
+                       column_template.format(data='ens_working', metric='precision', subset='all'): prec_ens_working,
+                       column_template.format(data='ens_working', metric='recall', subset='all'): recall_ens_working,
+                       column_template.format(data='ens_working', metric='f1', subset='all'): f1_ens_working,
+                       column_template.format(data='ens_unseen', metric='precision', subset='all'): prec_ens_unseen,
+                       column_template.format(data='ens_unseen', metric='recall', subset='all'): recall_ens_unseen,
+                       column_template.format(data='ens_unseen', metric='f1', subset='all'): f1_ens_unseen,
+                           }
+
+            metric_list_ens += [metric_dict]
+        metrics_df_ens = pandas.DataFrame.from_records(metric_list_ens)            
+            
+        return (df_ens_working,
+                df_ens_unseen,
+                metrics_df_ens,
+               )
+        # END OF ENSEMBLE FUNCTION        
         
     def export_classifiers(self):
         self.classifier_output_fnames = []
