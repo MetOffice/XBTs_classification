@@ -1,0 +1,26 @@
+{"input_features": ["country", "max_depth", "year","lat","lon"],
+ "output_feature":"instrument",
+ "year_range": [1966,2015],
+ "parallel_jobs": 1,
+"split": {
+          "unseen_feature": "cruise_number",
+          "balance_features": ["year", "instrument"],
+          "num_unseen_splits": 3,
+          "num_training_splits": 3
+        },
+ "experiment_name": "mlp_country",
+ "learner":{"module_name":"sklearn.neural_network",
+            "python_class":"MLPClassifier",
+            "name": "MLP"
+           },
+ "tuning":{"param_grid":{ "hidden_layer_sizes": [[10, 10], [20, 20]],
+                         "alpha": [1e-4],
+                         "max_iter": [1000]
+                        },
+           "scoring":"recall_micro",
+           "n_jobs":1,
+           "return_train_score":true,
+           "return_estimator": true,
+           "cv_metrics": ["recall_micro", "precision_micro", "f1_micro"]
+          }
+}
