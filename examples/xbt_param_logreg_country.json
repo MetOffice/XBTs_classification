@@ -1,21 +1,21 @@
 {"input_features": ["country", "max_depth", "year"],
  "output_feature":"instrument",
  "year_range": [1966,2015],
- "parallel_jobs": 1,
+ "parallel_jobs": 8,
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
-          "num_unseen_splits": 3,
-          "num_training_splits": 3
+          "num_unseen_splits": 5,
+          "num_training_splits": 5
         },
- "experiment_name": "mlp_country",
- "learner":{"module_name":"sklearn.neural_network",
-            "python_class":"MLPClassifier",
-            "name": "MLP"
+ "experiment_name": "logreg_country",
+ "learner":{"module_name":"sklearn.linear_model",
+            "python_class":"LogisticRegression",
+            "name": "LogisticRegression"
            },
- "tuning":{"param_grid":{ "hidden_layer_sizes": [[10, 10], [20, 20]],
-                         "alpha": [1e-4],
-                         "max_iter": [1000]
+ "tuning":{"param_grid":{"tol": [1e-3,5e-4, 1e-4], 
+                         "C": [0.5, 1.0,2.0],
+                         "max_iter": [500]
                         },
            "scoring":"recall_micro",
            "n_jobs":1,

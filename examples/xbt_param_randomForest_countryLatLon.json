@@ -14,7 +14,7 @@
             "name": "RandomForest"
            },
  "tuning":{"param_grid":{"max_depth": [5,10,20], 
-                         "n_estimators": [10, 50, 100]
+                         "n_estimators": [50]
                         },
            "scoring":"recall_micro",
            "n_jobs":1,
