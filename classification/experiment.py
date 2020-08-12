@@ -21,6 +21,7 @@ from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
 
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
+SCORE_FNAME_TEMPLATE = 'xbt_score_{name}.csv'
 OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{name}.csv'
 CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
 
@@ -29,6 +30,10 @@ RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
 PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat}'
 MAX_PROB_FEATURE_NAME = '{target}_max_prob'
 
+OUTPUT_CQ_FLAG = 'classification_quality_flag_{var_name}'
+OUTPUT_CQ_INPUT = 0
+OUTPUT_CQ_ML = 1
+OUTPUT_CQ_IMETA = 2
 
 class NumpyEncoder(json.JSONEncoder):
     """Encoder to print the result of tuning into a json file"""
@@ -62,6 +67,7 @@ class ClassificationExperiment(object):
         self._exp_datestamp = None
         self.classifier_fnames = None
         self.experiment_description_dir = None
+        self.score_table = None
         
         self.ens_unseen_fraction = 0.1        
         # load experiment definition from json file
@@ -103,11 +109,13 @@ class ClassificationExperiment(object):
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
         print('generating metrics')
-        metrics_train = self.generate_metrics(clf1, df_dict['train'], 'train')        
-        metrics_test = self.generate_metrics(clf1, df_dict['test'], 'test')
+        metrics_train, score_train = self.generate_metrics(clf1, df_dict['train'], 'train')        
+        metrics_test, score_test = self.generate_metrics(clf1, df_dict['test'], 'test')
         exp_results = pandas.merge(metrics_train, metrics_test, on='year')
-        metrics_unseen = self.generate_metrics(clf1, df_dict['unseen'], 'unseen')
+        metrics_unseen, score_unseen = self.generate_metrics(clf1, df_dict['unseen'], 'unseen')
         exp_results = exp_results.merge(metrics_unseen, on='year')
+        
+        self.score_table = pandas.DataFrame.from_records([score_train, score_test, score_unseen])
         
         # generate imeta
         duration1 = time.time() - start1
@@ -126,7 +134,9 @@ class ClassificationExperiment(object):
             self.results.to_csv(
                 os.path.join(self.exp_output_dir,
                              RESULT_FNAME_TEMPLATE.format(name=out_name)))
-        
+            self.score_table.to_csv(
+                os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
         
         # generate imeta algorithm results for the whole dataset
         duration1 = time.time() - start1
@@ -242,14 +252,19 @@ class ClassificationExperiment(object):
         print(f'{duration1:.3f} seconds since start.')
         print('calculating metrics')
         metrics_list = {}
+        scores_list = []
         for split_num, estimator in self.classifiers.items():
             xbt_train = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
             xbt_test = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
-            train_metrics = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num))
-            test_metrics = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num))
-            unseen_metrics = self.generate_metrics(estimator, xbt_ens_unseen, 'unseen_{0}'.format(split_num) )            
-            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')        
+            train_metrics, train_scores = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num))
+            test_metrics, test_scores = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num))
+            unseen_metrics, unseen_scores = self.generate_metrics(estimator, xbt_ens_unseen, 'unseen_{0}'.format(split_num) )            
+            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')   
+            scores_list += [train_scores, test_scores, unseen_scores]
 
+        self.score_table = pandas.DataFrame.from_records(scores_list)
+            
+            
         metrics_df_merge = None
         for label1, metrics1  in metrics_list.items():
             if metrics_df_merge is None:
@@ -261,12 +276,15 @@ class ClassificationExperiment(object):
 
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
-        print('output results to a file')
         if write_results:
+            print('output results to a file')
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
             self.results.to_csv(
                 os.path.join(self.exp_output_dir,
                              RESULT_FNAME_TEMPLATE.format(name=out_name)))
+            self.score_table.to_csv(
+                os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
         
         
         # generate imeta algorithm results for the whole dataset
@@ -636,9 +654,21 @@ class ClassificationExperiment(object):
             metric_dict.update({column_template.format(data=data_label, metric='f1', subset=cat): val for cat, val in zip(cats, f1_cat)})
             metric_dict.update({column_template.format(data=data_label, metric='support', subset=cat): val for cat, val in zip(cats, support_cat)})
             metric_list += [metric_dict]
-            
         metrics_df = pandas.DataFrame.from_records(metric_list)
-        return metrics_df        
+            
+        X_full = xbt_ds.filter_features(self.input_features).get_ml_dataset()[0]
+        y_full = xbt_ds.filter_features([self.target_feature]).get_ml_dataset()[0]
+        y_res_full = clf.predict(X_full)
+        prec_full, recall_full, f1_full, support_full = sklearn.metrics.precision_recall_fscore_support(
+                y_full, y_res_full, average='micro')
+        metrics_full = {
+            'name': data_label,
+            'precision_all': prec_full,
+            'recall_all': recall_full,
+            'f1_all': f1_full,
+            'support_all': support_full,
+            }
+        return metrics_df, metrics_full       
     
     def generate_prediction(self, clf, feature_name):
         if self.xbt_predictable is None:
@@ -649,22 +679,28 @@ class ClassificationExperiment(object):
         # generate classification for predictable profiles
         res_ml1 = clf.predict(self.xbt_predictable.filter_features(self.input_features).get_ml_dataset()[0])
         res2 = list(self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_ml1).reshape(-1))        
+        # use known instrument type label for the labelled data, so overwrite the predictions with the known values where we have them
+        self.xbt_predictable.xbt_df.loc[self.xbt_labelled.xbt_df.index, feature_name] = self.xbt_predictable.xbt_df.loc[self.xbt_labelled.xbt_df.index, self.target_feature]
         self.xbt_predictable.xbt_df[feature_name] = res2        
         
         def imeta_instrument(row1):
             return 'XBT: {t1[0]} ({t1[1]})'.format(t1=imeta_classification(row1))        
-        
+
         # checking for missing values and fill in imeta
-        flag_name = 'imeta_applied_{name}'.format(name=feature_name)
-        self.xbt_predictable.xbt_df[flag_name] = 0
-        self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, flag_name] = 1
+        flag_name = OUTPUT_CQ_FLAG.format(var_name=feature_name)
+        self.xbt_predictable.xbt_df[flag_name] = OUTPUT_CQ_ML 
+        self.xbt_predictable.xbt_df.loc[self.xbt_labelled.xbt_df.index, flag_name] = OUTPUT_CQ_INPUT
+        self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, flag_name] = OUTPUT_CQ_IMETA
+        
+        
         self.xbt_predictable.xbt_df[flag_name] = self.xbt_predictable.xbt_df[flag_name].astype('int8')
         self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, feature_name] = \
             self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].apply(imeta_instrument, axis=1)
         
         # merge into full dataset
+        # first, define what to use for missing values when merging
         fv_dict = {feature_name: dataexploration.xbt_dataset.UNKNOWN_STR,
-                   flag_name: 1
+                   flag_name: OUTPUT_CQ_IMETA 
                   }
         self.dataset.merge_features(self.xbt_predictable, [feature_name, flag_name],
                                fill_values = fv_dict,
@@ -673,7 +709,7 @@ class ClassificationExperiment(object):
                                 output_formatters={feature_name: dataexploration.xbt_dataset.cat_output_formatter})        
         
         # fill in imeta for unpredictable values
-        xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.CQ_FLAG: 0})
+        xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.PREDICTABLE_FLAG: 0})
         imeta_instrument_fallback = xbt_unknown_inputs.xbt_df.apply(imeta_instrument, axis=1)
         self.dataset.xbt_df.loc[xbt_unknown_inputs.xbt_df.index, feature_name] = imeta_instrument_fallback
         self.dataset.xbt_df[flag_name] = self.dataset.xbt_df[flag_name].astype('int8')
