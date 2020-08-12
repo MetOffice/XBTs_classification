@@ -18,7 +18,7 @@ UNKNOWN_STR = 'UNKNOWN'
 UNKNOWN_MODEL_STR = 'TYPE UNKNOWN'
 UNKNOWN_MANUFACTURER_STR = 'UNKNOWN BRAND'
 
-CQ_FLAG = 'classification_quality_flag'
+PREDICTABLE_FLAG = 'is_predictable'
 
 EXCLUDE_LIST = ['Unnamed: 0']
 KEY_DICT = {
@@ -350,8 +350,8 @@ class XbtDataset():
             axis='columns',
         )
                 
-        self.xbt_df[CQ_FLAG] = 0
-        self.xbt_df.loc[self.xbt_df.index[filter_values], CQ_FLAG] = 1
+        self.xbt_df[PREDICTABLE_FLAG] = 0
+        self.xbt_df.loc[self.xbt_df.index[filter_values], PREDICTABLE_FLAG] = 1
         subset = self.xbt_df[filter_values]
         xbt_predictable = XbtDataset(
             year_range=self.year_range, 
