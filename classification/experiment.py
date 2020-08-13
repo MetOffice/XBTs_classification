@@ -190,7 +190,11 @@ class ClassificationExperiment(object):
         
         # get train/test/unseen sets
         print('generating splits')
-        ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature, fraction=self.ens_unseen_fraction, split_feature='year')    
+        # using this function to ensure an even split by year seems to cause a dramatiuc degradation of classification results, so turning this off for now,
+        # I suspect there is a bug in the function that is doing something weird to the split
+        # ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature, fraction=self.ens_unseen_fraction, split_feature='year')
+
+        ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature, fraction=self.ens_unseen_fraction)
         xbt_ens_unseen = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers}, mode='include', check_type='in_filter_set')
         xbt_ens_working = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers}, mode='exclude', check_type='in_filter_set')        
         
