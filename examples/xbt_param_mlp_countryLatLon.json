@@ -8,7 +8,7 @@
           "num_unseen_splits": 3,
           "num_training_splits": 3
         },
- "experiment_name": "mlp_country",
+ "experiment_name": "mlp_countryLatLon",
  "learner":{"module_name":"sklearn.neural_network",
             "python_class":"MLPClassifier",
             "name": "MLP"
