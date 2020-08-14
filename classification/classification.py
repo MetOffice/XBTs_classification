@@ -51,6 +51,28 @@ def run_single_experiment():
 
 
 @experiment_timer
+def run_cv_experiment():
+    """
+    """
+    exp_args = _get_arguments(
+        'Run training, inference and evaluation on multiple splits '
+        'using cross-validation.'
+    )
+    return_code = 0
+    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment, 
+                                                         exp_args.input_path, 
+                                                         exp_args.output_path,
+                                                  preproc_dir=exp_args.preproc_path,
+                                                 )
+    try:
+        xbt_exp.run_cv_experiment()
+    except RuntimeError as e1:
+        print(f'Runtime error:\n {str(e1)}')
+        return_code = 1
+    
+    return return_code
+
+@experiment_timer
 def run_cvhpt_experiment():
     """
     """
