@@ -13,7 +13,7 @@
             "python_class":"DecisionTreeClassifier",
             "name": "DecisionTree"
            },
- "tuning":{"param_grid":{"max_depth": [null, 5,10,20], 
+ "tuning":{"param_grid":{"max_depth": [20,5,10,null], 
                          "min_samples_leaf": [1,2,5], 
                          "criterion": ["gini", "entropy"]           
                         },
