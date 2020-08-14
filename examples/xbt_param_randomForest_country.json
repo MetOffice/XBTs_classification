@@ -1,0 +1,25 @@
+{"input_features": ["country", "max_depth", "year"],
+ "output_feature":"instrument",
+ "year_range": [1966,2015],
+ "parallel_jobs": 4,
+"split": {
+          "unseen_feature": "cruise_number",
+          "balance_features": ["year", "instrument"],
+          "num_unseen_splits": 5,
+          "num_training_splits": 5
+        },
+ "experiment_name": "RandomForest_country",
+ "learner":{"module_name": "sklearn.ensemble",
+            "python_class":"RandomForestClassifier",
+            "name": "RandomForest"
+           },
+ "tuning":{"param_grid":{"max_depth": [20, 5,10], 
+                         "n_estimators": [50]
+                        },
+           "scoring":"recall_micro",
+           "n_jobs":1,
+           "return_train_score":true,
+           "return_estimator": true,
+           "cv_metrics": ["recall_micro", "precision_micro", "f1_micro"]
+          }
+}
