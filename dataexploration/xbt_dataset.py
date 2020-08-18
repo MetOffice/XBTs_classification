@@ -276,6 +276,8 @@ class XbtDataset():
                                          
                 elif value == 'imeta':
                     check1 =  (xbt_df['imeta_applied'] == 1)
+                elif value == 'all':
+                    check1 = (xbt_df['imeta_applied'] == 0) | (xbt_df['imeta_applied'] != 0)
             else:
                 if check_type == 'match_subset':
                     try:
