@@ -14,7 +14,7 @@
             "name": "kNN"
            },
  "tuning":{"param_grid": {"weights": ["uniform", "distance" ],
-                          "n_neighbors": [2,5,10,20]
+                          "n_neighbors": [5,2,10,20]
                          },
            "scoring":"recall_micro",
            "n_jobs":1,

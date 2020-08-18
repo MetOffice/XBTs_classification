@@ -6,15 +6,15 @@
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
           "num_unseen_splits": 5,
-          "num_training_splits": 3
+          "num_training_splits": 5
         },
  "experiment_name": "RandomForest_countryLatLon",
  "learner":{"module_name": "sklearn.ensemble",
             "python_class":"RandomForestClassifier",
             "name": "RandomForest"
            },
- "tuning":{"param_grid":{"max_depth": [5,10,20], 
-                         "n_estimators": [10, 50, 100]
+ "tuning":{"param_grid":{"max_depth": [20, 5,10], 
+                         "n_estimators": [50]
                         },
            "scoring":"recall_micro",
            "n_jobs":1,
