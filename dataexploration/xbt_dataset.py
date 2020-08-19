@@ -8,6 +8,7 @@ import numpy
 import sklearn.preprocessing
 
 import preprocessing.extract_year
+import xbt.common
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
 
 INSTRUMENT_REGEX_STRING = 'XBT[:][\s](?P<model>[\w\s;:-]+)([\s]*)([(](?P<manufacturer>[\w\s.:;-]+)[)])?'
@@ -384,7 +385,7 @@ class XbtDataset():
                                               list(self.xbt_df[f1].unique()))
         return checkers
     
-    def output_data(self, out_path, target_features=[]):
+    def output_data(self, out_dir, fname_template, exp_name, target_features=[], output_split=xbt.common.OUTPUT_SINGLE):
         out_df = self.xbt_df
         for feat1 in target_features:
             try:
@@ -393,7 +394,37 @@ class XbtDataset():
                         feat1, out_df[[feat1]], self._target_encoders[feat1]))
             except KeyError:
                 print(f'cannot output ML feature {feat1}, no formatter available.')
-        out_df.to_csv(out_path)
+        if output_split == xbt.common.OUTPUT_SINGLE:
+                        
+
+            out_path = os.path.join(out_dir,
+                                    fname_template.format(exp_name=exp_name,
+                                                          subset='all')
+                                   )
+            print(f'output all predictions to {out_path}')
+            out_df.to_csv(out_path)
+        elif output_split == xbt.common.OUTPUT_YEARLY:
+            print('output predictions by year to {0}'.format(
+                os.path.join(out_dir, fname_template.format(exp_name=exp_name,
+                                                            subset='YYYY')
+                                       )))
+            for current_year in out_df.year.unique():
+                out_path = os.path.join(out_dir,
+                                        fname_template.format(exp_name=exp_name,
+                                                              subset=f'{current_year:04d}')
+                                       )
+                out_df[out_df.year == current_year].to_csv(out_path)
+        elif output_split == xbt.common.OUTPUT_MONTHLY:
+            print('output predictions by month to {0}'.format(
+                os.path.join(out_dir, fname_template.format(exp_name=exp_name,
+                                                            subset='YYYYMM')
+                                       )))
+            for current_year in out_df.year.unique():
+                for current_month in range(0,12):
+                    out_path = os.path.join(out_dir,
+                                            fname_template.format(exp_name=exp_name,
+                                                                  subset=f'{current_year:04d}{current_month:02d}'))
+                    out_df[(out_df.year == current_year) & (out_df.month == current_month)].to_csv(out_path)
     
     def merge_features(self, other, features_to_merge, fill_values=None, feature_encoders=None, target_encoders=None, output_formatters=None):
         merged_df = self.xbt_df.merge(other.xbt_df[['id'] + features_to_merge], on='id', how='outer')

@@ -1,7 +1,9 @@
 import argparse
 import os
 import time
+import xbt.common
 from classification import experiment
+
 
 def _get_arguments(description):
     parser = argparse.ArgumentParser(description=description)
@@ -13,10 +15,16 @@ def _get_arguments(description):
                 'written to this location.')
     parser.add_argument('--input-path', dest='input_path', help=help_msg)
     help_msg = 'The path to the directory containing files to be preprocessed, typically netCDF files from WOD or similar source.'
-    parser.add_argument('--output-path', dest='output_path', help=help_msg)
     parser.add_argument('--preproc-path', dest='preproc_path', help=help_msg, default=None)
     help_msg = 'The path to the directory for experimenting output. A subdirectory will be created using the experiment name.'
-    
+    parser.add_argument('--output-path', dest='output_path', help=help_msg)
+    help_msg = 'Specify whether classification output should be in a single file, or split by year or month.'
+    parser.add_argument('--output-file-split', 
+                        dest='output_file_split', 
+                        help=help_msg, 
+                        choices=xbt.common.OUTPUT_FREQS,
+                        default = xbt.common.OUTPUT_SINGLE,
+                       )
     return parser.parse_args()
 
 def experiment_timer(exp_func):
@@ -41,6 +49,7 @@ def run_single_experiment():
                                                          exp_args.input_path, 
                                                          exp_args.output_path,
                                                   preproc_dir=exp_args.preproc_path,
+                                                  output_split=exp_args.output_file_split,
                                                  )
     try:
         xbt_exp.run_single_experiment()
@@ -63,6 +72,7 @@ def run_cv_experiment():
                                                          exp_args.input_path, 
                                                          exp_args.output_path,
                                                   preproc_dir=exp_args.preproc_path,
+                                                  output_split=exp_args.output_file_split,
                                                  )
     try:
         xbt_exp.run_cv_experiment()
@@ -86,6 +96,7 @@ def run_cvhpt_experiment():
                                                          exp_args.input_path, 
                                                          exp_args.output_path,
                                                   preproc_dir=exp_args.preproc_path,
+                                                  output_split=exp_args.output_file_split,
                                                  )
     try:
         xbt_exp.run_cvhpt_experiment()
@@ -107,6 +118,7 @@ def run_inference():
                                                   exp_args.input_path, 
                                                   exp_args.output_path,
                                                   preproc_dir=exp_args.preproc_path,
+                                                  output_split=exp_args.output_file_split,
                                                  )
     try:
         xbt_exp.run_inference()
