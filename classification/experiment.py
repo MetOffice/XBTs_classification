@@ -22,7 +22,7 @@ from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
 SCORE_FNAME_TEMPLATE = 'xbt_score_{name}.csv'
-OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{name}.csv'
+OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{exp_name}_{subset}.csv'
 CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
 
 UNSEEN_FOLD_NAME = 'unseen_fold'
@@ -34,6 +34,7 @@ OUTPUT_CQ_FLAG = 'classification_quality_flag_{var_name}'
 OUTPUT_CQ_INPUT = 0
 OUTPUT_CQ_ML = 1
 OUTPUT_CQ_IMETA = 2
+
 
 class NumpyEncoder(json.JSONEncoder):
     """Encoder to print the result of tuning into a json file"""
@@ -50,10 +51,11 @@ class ClassificationExperiment(object):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
-    def __init__(self, json_descriptor, data_dir, output_dir, preproc_dir=None):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, preproc_dir=None):
         # assign arguments
         self.data_dir = data_dir
         self.root_output_dir = output_dir
+        self.output_split = output_split
         self.preproc_dir = preproc_dir
         self.json_descriptor = json_descriptor
         
@@ -160,12 +162,13 @@ class ClassificationExperiment(object):
         print(f'{duration1:.3f} seconds since start.')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
-            print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                os.path.join(self.exp_output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
-                target_features=[feature_name])
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[feature_name],
+            )
             
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -308,12 +311,13 @@ class ClassificationExperiment(object):
         print('output predictions')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
-            print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                os.path.join(self.exp_output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
-                target_features=[])
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[],
+            )
                     
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -385,12 +389,13 @@ class ClassificationExperiment(object):
         
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
-            print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                os.path.join(self.exp_output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
-                target_features=[])
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[],
+            )
                     
         return self.classifiers
     
