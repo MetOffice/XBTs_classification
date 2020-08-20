@@ -8,6 +8,7 @@ import numpy
 import sklearn.preprocessing
 
 import preprocessing.extract_year
+import dataexploration.wod
 import xbt.common
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
 
@@ -179,7 +180,8 @@ TARGET_PROCESSORS.update({f1: get_cat_ml_feature for f1 in TARGET_FEATURES})
 
 
 OUTPUT_FORMATTERS = {}
-OUTPUT_FORMATTERS.update({f1: cat_output_formatter for f1 in CATEGORICAL_FEATURES + TARGET_LOADED_FEATURES})
+OUTPUT_FORMATTERS.update({f1: [cat_output_formatter] for f1 in CATEGORICAL_FEATURES + TARGET_LOADED_FEATURES})
+
 
 
 TRAIN_SET_FEATURE = 'training_set'
@@ -241,6 +243,10 @@ class XbtDataset():
         self._feature_encoders = {}
         self._target_encoders = {}
         self._output_formatters = OUTPUT_FORMATTERS
+        
+#         self.wod_instrument_codes = dataexploration.wod.WODInstrumentCodes()
+#         self._output_formatters['instrument'] += [self.wod_instrument_codes.name_to_code]
+        
         if self.xbt_df is None:
             self._load_data() 
 
@@ -389,9 +395,10 @@ class XbtDataset():
         out_df = self.xbt_df
         for feat1 in target_features:
             try:
-                out_df = out_df.join(
-                    self._output_formatters[feat1](
-                        feat1, out_df[[feat1]], self._target_encoders[feat1]))
+                for formatter1 in self._output_formatters[feat1]:
+                    out_df = out_df.join(formatter1(feat1, 
+                                                    out_df[[feat1]], 
+                                                    self._target_encoders[feat1]))
             except KeyError:
                 print(f'cannot output ML feature {feat1}, no formatter available.')
         if output_split == xbt.common.OUTPUT_SINGLE:
