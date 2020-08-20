@@ -8,7 +8,6 @@ import numpy
 import sklearn.preprocessing
 
 import preprocessing.extract_year
-import dataexploration.wod
 import xbt.common
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
 
@@ -243,9 +242,6 @@ class XbtDataset():
         self._feature_encoders = {}
         self._target_encoders = {}
         self._output_formatters = OUTPUT_FORMATTERS
-        
-#         self.wod_instrument_codes = dataexploration.wod.WODInstrumentCodes()
-#         self._output_formatters['instrument'] += [self.wod_instrument_codes.name_to_code]
         
         if self.xbt_df is None:
             self._load_data() 

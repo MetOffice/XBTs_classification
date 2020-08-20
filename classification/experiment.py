@@ -742,8 +742,11 @@ class ClassificationExperiment(object):
         
         # add WOD code version of output
         coded_feature_name = feature_name + '_code'
-        self.dataset.xbt_df[feature_name].apply(self._wod_encoders[self.target_feature].name_to_code)
-        
+        try:
+            wod_target_encoder = self._wod_encoders[self.target_feature]
+            self.dataset.xbt_df[coded_feature_name] = self.dataset.xbt_df[feature_name].apply(wod_target_encoder.name_to_code)
+        except KeyError:
+            print(f'No WOD encoder for target feature {self.target_feature}, encoded version of data not produced.')
         
     def generate_vote_probabilities(self, result_feature_names):
         # take a list of estimators
