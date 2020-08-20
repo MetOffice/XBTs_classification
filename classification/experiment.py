@@ -16,6 +16,7 @@ from preprocessing.data_preprocessing import  DataPreprocessor
 pandas.options.mode.chained_assignment = None
 
 import xbt.common
+import dataexploration.wod
 import dataexploration.xbt_dataset
 from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
@@ -70,6 +71,7 @@ class ClassificationExperiment(object):
         self.classifier_fnames = None
         self.experiment_description_dir = None
         self.score_table = None
+        self._wod_encoders = {k1: enc_class1() for k1, enc_class1 in dataexploration.wod.get_wod_encoders().items()}
         
         self.ens_unseen_fraction = 0.1        
         # load experiment definition from json file
@@ -737,6 +739,14 @@ class ClassificationExperiment(object):
         imeta_instrument_fallback = xbt_unknown_inputs.xbt_df.apply(imeta_instrument, axis=1)
         self.dataset.xbt_df.loc[xbt_unknown_inputs.xbt_df.index, feature_name] = imeta_instrument_fallback
         self.dataset.xbt_df[flag_name] = self.dataset.xbt_df[flag_name].astype('int8')
+        
+        # add WOD code version of output
+        coded_feature_name = feature_name + '_code'
+        try:
+            wod_target_encoder = self._wod_encoders[self.target_feature]
+            self.dataset.xbt_df[coded_feature_name] = self.dataset.xbt_df[feature_name].apply(wod_target_encoder.name_to_code)
+        except KeyError:
+            print(f'No WOD encoder for target feature {self.target_feature}, encoded version of data not produced.')
         
     def generate_vote_probabilities(self, result_feature_names):
         # take a list of estimators

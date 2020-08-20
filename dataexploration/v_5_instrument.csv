@@ -1,0 +1,275 @@
+code_name,Instrument
+units,WOD code
+0,UNKNOWN: UNKNOWN
+1,MBT: TYPE UNKNOWN
+2,XBT: TYPE UNKNOWN
+3,DBT: TYPE UNKNOWN
+4,CTD: TYPE UNKNOWN
+5,STD: TYPE UNKNOWN
+6,XCTD: TYPE UNKNOWN
+7,BOTTLE: TYPE UNKNOWN
+8,UNDERWAY: UNDERWAY DATA COLLECTION INSTRUMENT; TYPE UNKNOWN
+13,ANIMAL MOUNTED: TYPE UNKNOWN
+101,MBT: GM-39 (Russia)
+201,XBT: T7 (UNKNOWN BRAND)
+202,XBT: T4 (UNKNOWN BRAND)
+203,XBT: T6 (UNKNOWN BRAND)
+204,XBT: T5 (UNKNOWN BRAND)
+205,XBT: T10 (UNKNOWN BRAND)
+206,XBT: T11 (UNKNOWN BRAND)
+207,XBT: T7 (SIPPICAN)
+208,XBT: T4 (SIPPICAN)
+209,XBT: T6 (SIPPICAN)
+210,XBT: T5 (SIPPICAN)
+211,XBT: T10 (SIPPICAN)
+212,XBT: T11 (SIPPICAN)
+213,XBT: FAST DEEP (SIPPICAN)
+214,XBT: DEEP BLUE (SIPPICAN)
+215,XBT: T4 (TSK - TSURUMI SEIKI Co.)
+216,XBT: T6 (TSK - TSURUMI SEIKI Co.)
+217,XBT: T7 (TSK - TSURUMI SEIKI Co.)
+218,XBT: (MHI; Academy of Science; Ukraine)
+219,XBT: T5 (TSK - TSURUMI SEIKI Co.)
+220,XBT: T10 (TSK - TSURUMI SEIKI Co.)
+221,XBT: XBT-1 (SPARTON)
+222,XBT: XBT-3 (SPARTON)
+223,XBT: XBT-4 (SPARTON)
+224,XBT: XBT-5 (SPARTON)
+225,XBT: XBT-5DB (SPARTON)
+226,XBT: XBT-6 (SPARTON)
+227,XBT: XBT-7 (SPARTON)
+228,XBT: XBT-7DB (SPARTON)
+229,XBT: XBT-10 (SPARTON)
+230,XBT: XBT-20 (SPARTON)
+231,XBT: XBT-20DB (SPARTON)
+232,XBT: DEEP BLUE (TSK - TSURUMI SEIKI Co.)
+233,XBT: AXBT (TSK - TSURUMI SEIKI Co.)
+234,XBT: AXBT (UNKNOWN BRAND AND TYPE)
+235,XBT: DEEP BLUE; UNKNOWN BRAND
+236,XBT: FAST DEEP; UNKNOWN BRAND
+237,XBT: SUBMARINE-LAUNCHED EXPENDABLE BATHYTHERMOGRAPH (SSXBT) (SIPPICAN)
+238,XBT: AXBT 536 (SPARTON)
+301,DBT: BRANCKER RBR XL-200; mBT (Micro BT)
+302,DBT: SBE 39 Temperature (and Pressure) Recorder (Sea-Bird Electronics; Inc.)
+401,CTD: SBE 9 (Deep ocean precision CTD; Sea-Bird Electronics; Inc.)
+402,CTD: ISTOK-4 (Russia)
+403,CTD: EGandG MARK III (EGandG Ocean products)
+404,CTD: NEIL BROWN MARK IIIB
+405,CTD: SEACAT; TYPE UNKNOWN (Sea-Bird Electronics; Inc.)
+406,CTD: GUILDLINE; MODEL UNKNOWN
+407,CTD: (MHI; Academy of Science; Ukraine)
+408,CTD: (Institute Oceanography; Academy of Science; Russia)
+409,CTD: KROSSBIM STD ROSETTES
+410,CTD: Sea-Bird Electronics; MODEL UNKNOWN
+411,CTD: SBE 911plus (Sea-Bird Electronics; Inc.)
+412,CTD: BISSETT-BERMAN; MODEL UNKNOWN
+413,CTD: JASUS (by M. Du Chaffaut and T. Labadie)
+414,CTD: PLESSEY 9040
+415,CTD: PLESSEY 9400
+416,CTD: PLESSEY 9041
+417,CTD: PLESSEY 9060
+418,CTD: NEIL BROWN MARK III
+419,CTD: HYDRO PRODUCTS 612/912S
+420,CTD: NEIL BROWN SMART CTD
+421,CTD: PLESSEY; MODEL UNKNOWN
+422,CTD: PLESSEY/GRUNDY; MODEL UNKNOWN (Notice Grundy is new Plessey name)
+423,CTD: NEIL BROWN DRCM
+424,CTD: SBE 102 (Sea-Bird Electronics; Inc.)
+425,CTD: SBE 911 (Sea-Bird Electronics; Inc.)
+426,CTD: OCEAN CASSETTE
+427,CTD: NEIL BROWN; MODEL UNKNOWN
+428,CTD: BECKMAN RS5-3
+429,CTD: SBE 19 SEACAT profiler (Sea-Bird Electronics; Inc.)
+430,CTD: GUILDLINE 8700 aka MARK II
+431,CTD: GUILDLINE 8701 (analog CTD)
+432,CTD: GUILDLINE 8701 MODIFIED
+433,CTD: GUILDLINE 8705
+434,CTD: GUILDLINE 8706
+435,CTD: GUILDLINE 8709 (portable)
+436,CTD: GUILDLINE 8755
+437,CTD: GUILDLINE 8770 (portable)
+438,CTD: GUILDLINE 8737 WOCE (WOCE-specifications)
+439,CTD: FSI CTD (Falmouth Scientific; Inc.)
+440,CTD: BISSETT-BERMAN 9006
+441,CTD: BISSETT-BERMAN 9040-2A
+442,CTD: ZOND-BATHOMETER
+443,CTD: OCEAN SENSORS OS200
+444,CTD: CHELSEA INSTRUMENTS; MODEL UNKNOWN
+445,CTD: HYDROZOND
+446,CTD: SBE 25 SEALOGGER (Sea-Bird Electronics; Inc.)
+447,CTD: NEIL BROWN MARK IV
+448,CTD: NEIL BROWN MARK II
+449,CTD: HYDROPOLYTESTER/NEPHELOMETER ZULLIG
+450,CTD: MEERESTECHNIK OTS-1200
+451,CTD: SBE 9s (Sea-Bird Electronics; Inc.)
+452,CTD: MODIFIED NEIL BROWN; PACODF CTD-O2
+453,CTD: NEIL BROWN MARK V
+454,CTD: CHELSEA INSTRUMENTS AQUALINK
+455,CTD: OCEAN DATA EQUIPMENT (ODE) 302 CSTD
+456,CTD: SBE 41/41CP (Sea-Bird CTD Module for Autonomous Profiling Floats)
+457,CTD: FSI CTPS-202-D (Falmouth Scientific; Inc.)
+458,CTD: AIST (Russia)
+459,CTD: FSI ICTD Profiler (Falmouth Scientific; Inc.)
+460,CTD: OM-87 (Institut fuer Meereskunde Warnemuende; Germany)
+461,CTD: NEIL BROWN/GENERAL OCEANICS MARK IIIC
+462,CTD: TSK-original CTD sensor (TSK - TSURUMI SEIKI Co.)
+463,CTD: SBE 16 SEACAT C-T Recorder (Sea-Bird Electronics; Inc.)
+464,CTD: SBE 37-IM MicroCAT (Sea-Bird Electronics; Inc.)
+465,CTD: Fluorometer: Turner Designs; model unknown
+466,CTD: Fluorometer: Instrument manufacturer and model unknown
+467,CTD: Fluorometer: Aiken (1981)
+468,CTD: Transmissometer: SeaTech 25-cm pathlength 660 nm wavelength (Beam C)
+469,CTD: Transmissometer: Instrument manufacturer and model unknown
+470,CTD: SBE 19plus SEACAT profiler (Sea-Bird Electronics; Inc.)
+471,CTD: MEERESTECHNIK ELEKTRONIK
+472,CTD: Transmissometer: Chelsea AlphaTracka Mk II 25-cm pathlength 660-nm wavelength
+473,CTD: CTD 90M - Multiparameter Memory Probe (Sea and Sun Technology GmbH/LTD)
+474,CTD: Transmissometer: C-Star 25-cm pathlength 660 nm wavelength (Beam Cp; WET Labs; USA)
+475,CTD: ISTOK-3 (MHI; Ukraine)
+476,CTD: ISTOK-5 (MHI; Ukraine)
+477,CTD: ISTOK-7 (MHI; Ukraine)
+478,CTD: KATRAN-4S (Shirshov IO; Russia)
+479,CTD: OCEAN-2 (Shirshov IO; Russia)
+480,CTD: OCEAN-3 (Shirshov IO; Russia)
+481,CTD: OLT profiler (MHI; Ukraine)
+482,CTD: ShIK-01 (MHI; Ukraine)
+483,CTD: ShIK-02 (MHI; Ukraine)
+484,CTD: GUILDLINE MARK IV
+485,CTD: Hydrolab Surveyor 3
+486,CTD: WET Labs Eco fluorometer for color dissolved organic matter (CDOM)
+487,CTD: UnderwayCTD (Oceanscience)
+488,CTD: AML Micro CTD (Applied Microsystems Limited)
+489,CTD: FSI Micro CTD (Falmouth Scientific; Inc.)
+490,CTD: SBE 19plus V2 SeaCAT Profiler (Sea-Bird Electronicsr; Inc.)
+491,CTD: CASTAWAY-CTD (SonTek/YSI Inc.)
+492,CTD: RBR CTD (Richard Brancker Research; RBR Ltd.)
+501,STD: PLESSEY 9006
+502,STD: PLESSEY 8400
+503,STD: PLESSEY 9040
+504,STD: PLESSEY 9041
+505,STD: ED 9071
+506,STD: APMCRO 12
+507,STD: Hydrolab in situ salinometer (circa 1960s)
+508,STD: AML STD-12 (aka AML CTD-12)
+509,STD: BISSETT-BERMAN 9040
+510,STD: SALINOMETER GM 65
+511,STD: HYTECH MODEL 9006
+512,STD: APPLIED MICROSYSTEMS 12 PLUS
+513,STD: SUBMARINE OCEANOGRAPHIC DIGITAL DATA SYSTEM (U.S. NAVY)
+514,STD: InterOcean Systems; Inc. Model 513-10 CSTD
+515,STD: 9040 STD (UNKNOWN BRAND)
+516,STD: 9040 STD-SV (UNKNOWN BRAND)
+517,STD: 9060 STD (UNKNOWN BRAND)
+518,STD: InterOcean Systems; Inc. T-S Bridge
+601,XCTD: STANDARD (SIPPICAN)
+602,XCTD: DEEP (SIPPICAN)
+603,XCTD: AXCTD (SIPPICAN)
+604,XCTD: SSXCTD (SIPPICAN)
+605,XCTD: UNKNOWN (SIPPICAN)
+606,XCTD: XCTD (TSK - TSURUMI SEIKI Co.; 1000 meter max)
+607,XCTD: AXCTD (TSK - TSURUMI SEIKI Co.)
+608,XCTD: XCTD-2 (TSK - TSURUMI SEIKI Co.)
+609,XCTD: XCTD-2F (TSK - TSURUMI SEIKI Co.)
+610,XCTD: XCTD-1 (TSK - TSURUMI SEIKI Co.)
+611,XCTD: XCTD-3 (TSK - TSURUMI SEIKI Co.)
+612,XCTD: Under-Ice Subsurface XCTD (SIPPICAN)
+613,XCTD: XCTD-4 (TSK - TSURUMI SEIKI Co.)
+701,BOTTLE: BATHOMETER (Russia)
+702,BOTTLE: TRACE METAL FREE BOTTLE
+703,BOTTLE: OPEN BUCKET
+704,        THERMISTER CHAIN
+705,BOTTLE: WHOI-developed SEA SAMPLER (circa 1950 MBT ON BOTTLE ROSETTE)
+706,BOTTLE: VAN DORN
+707,BOTTLE: Salinometer brand/model unknown (generic)
+708,BOTTLE: Guildline Autosal (model unknown)
+709,BOTTLE: Guildline model 8400 Autosal
+710,BOTTLE: Guildline model 8400A Autosal
+711,BOTTLE: Guildline model 8400B Autosal
+712,BOTTLE: Guildline model 8410 Portasal
+713,BOTTLE: Guildline model 8410A Portasal
+714,BOTTLE: Salinometer Kahlsico R-10
+715,BOTTLE: Salinometer AGE Minisal 2100
+716,BOTTLE: GERARD-EWING SAMPLER
+717,BOTTLE: Autolab Inductive Salinometer
+718,BOTTLE: Nansen water sampler; UNKNOWN BRAND and MODEL
+719,In-Situ: Automated dissolved oxygen sensor: brand and model unknown
+720,In-Situ: Automated dissolved oxygen sensor: Beckman polarographic; model unknown
+721,In-Situ: Automated dissolved oxygen sensor: SBE 43 dissolved oxygen sensor Clark polarographic membrane
+722,BOTTLE: Continuous Flow Autoanalyzer (CFA): Instrument manufacturer and model unknown
+723,BOTTLE: Continuous Flow Autoanalyzer (CFA): Technicon; model unknown
+724,BOTTLE: Autoanalyzer: Sumigraph analyzer; model unknown
+725,BOTTLE: Continuous Flow Autoanalyzer (CFA): Alpkem; model unknown
+726,BOTTLE: Continuous Flow Autoanalyzer (CFA): Skalar; model unknown
+727,BOTTLE: Autoanalyzer: CEC Elemental Analyzer  [BATS:   gf/f (0.7 um)]
+728,BOTTLE: Autoanalyzer: Perkin Elmer Model 240B Elemental Analyzer [CEAREX: gf/f]
+729,BOTTLE: Autoanalyzer: Yanagimoto CHN Analyzer [KH754: Type C gf/f]
+730,BOTTLE: Autoanalyzer: Perkin Elmer Model 2400 Elemental Analyzer [FRONTS]
+731,BOTTLE: Continuous Flow Autoanalyzer (CFA): Technicon AAII
+732,BOTTLE: Continuous Flow Autoanalyzer (CFA): ChemLab AAII
+733,BOTTLE: Continuous Flow Autoanalyzer (CFA): Bran+Luebbe trAAcs; model unknown
+734,BOTTLE: HPLC: High Performance Liquid Chromatography; model unknown
+735,BOTTLE: Automated titrator: type unknown
+736,BOTTLE: Methrohm Dosimat 665 automatic buret
+737,BOTTLE: Radiometer reference pH meter PHM-93; PHC-2085
+738,BOTTLE: Hirama Riken laboratory photometric titrater (ART-3 D0-1)
+739,BOTTLE: Klehn 50100 auto-titrator (Friederich et al.; 1991)
+740,BOTTLE: Continuous Flow Autoanalyzer (CFA): Bran+Luebbe trAAcs 800
+741,BOTTLE: Continuous Flow Autoanalyzer (CFA): Chemlab 
+742,BOTTLE: Lachat QuikChem 8000 FIA+ (Flow Injection Analyzer)
+743,BOTTLE: Continuous Flow Autoanalyzer (CFA): WESTCO CS-9000 sampler
+745,BOTTLE: Continuous Flow Autoanalyzer (CFA): Bran+Luebbe III
+750,BOTTLE: Fluorometer; TD-700
+755,BOTTLE: Autoanalyzer: Perkin+Elmer PE2400 CHNS elemental analyzer
+760,BOTTLE: Sub-surface continuous water pump sampler; brand and model unknown
+765,BOTTLE: Beckman pH meter Model G
+766,BOTTLE: pH meter manufactured by the Chesapeake Bay Institute; John Hopkins University (model unknown)
+767,BOTTLE: Horiba pH meter - Automatic Temperature Compensation (model unknown) 
+768,BOTTLE: Induction conductivity and temperature instrument (Schiemer and Pritchard; 1961)
+769,BOTTLE: Utopia Instruments Corp. (UIC) model 5011 Coulometer
+770,BOTTLE: Continuous Flow Autoanalyzer (CFA): Skalar Sanplus Autoanalyzer
+771,BOTTLE: Radiometer automatic titrator TTT80 and dual platinum electrode
+772,BOTTLE: Fluorometer; Turner Designs; model unknown
+773,BOTTLE: Fluorometer; Turner Designs; model 10-005 R
+774,BOTTLE: Fluorometer; Turner Designs; model 10-AU-005-CE
+775,BOTTLE: Hale apparatus with thermometer (Prestwich; 1875)
+776,BOTTLE: Ionometer electrolyte analyzer (Brand: Unknown; Model: EV 74)
+777,BOTTLE: AKEA autoanalyzer
+778,BOTTLE: Dissolved organic carbon (DOC) Shimadzu Total Organic Carbon Analyzer
+779,In-Situ: Automated dissolved oxygen sensor: SBE 13 dissolved oxygen sensor
+780,CTD: Fluorometer: SeaTech; model unknown
+781,CTD: Transmissometer: C-Star 10-cm pathlength 660 nm wavelength (WET Labs)
+782,CTD: Fluorometer: WET Labs ECO-AFL
+783,CTD: Fluorometer: Chelsea; model unknown
+784,CTD: Transmissometer: SeaTech 5.0 cm 660 nm wavelength
+785,CTD: Fluorometer: WET Labs WETStar
+786,CTD: Fluorometer: Seapoint Chlorophyll Fluorometer (Seapoint Sensors; Inc.)
+787,BOTTLE: Fluorometer; Turner Designs; model 10
+788,BOTTLE: Fluorometer; Turner Designs; model 10-AU
+789,In-Situ: Automated dissolved oxygen sensor: Aanderaa Oxygen Optode 3975
+790,CTD: Fluorometer: Chelsea AquaTracka
+791,BOTTLE: Continuous Segmented Flow Analyzer: SEAL Autoanalyzer 3HR
+4001,CTD: Transmissometer: IOS SeaTech red light (661 nm) 1-m pathlength
+4002,CTD: Fluorometer: WET Labs; model unknown
+4003,CTD: Radiometer; Profiling Ultraviolet Radiometer and Surface Reference PUV-500B/510B (Biospherical Instruments Inc.)
+4004,CTD: SBE 18 pH Sensor (Sea-Bird Scientific)
+4005,CTD: RBR XR-620 Multichannel Logger (Richard Brancker Research; RBR Ltd.)
+4006,CTD: RBR XR-420 Multichannel Logger (Richard Brancker Research; RBR Ltd.)
+4007,CTD: ISUS V3 Nitrate Sensor (Sea-Bird Scientific)
+4008,CTD: Transmissometer: c-Rover 2000; 25-cm pathlength 660 nm wavelength RAW Beam Cp (WET Labs/Sea-Bird Scientific)
+7013,BOTTLE: Beckman DU II spectrophotometer
+7014,BOTTLE: Spectronic 20 spectrophotometer
+7016,BOTTLE: Beckman pH meter model G-2 or GS
+7017,BOTTLE: Beckman pH meter model unknown
+7018,BOTTLE: Klett-Summerson photo-electric colorimeter (Garver; 1951)
+7019,BOTTLE: Photo-electric colorimeter (Brand: Unknown; Model FEK 60)
+7020,BOTTLE: Gas chromatograph (GC) with electron capture detector (ECD); model unknown
+7050,BOTTLE: Kahlisco induction salinometer; model unknown.
+7060,BOTTLE: Generic glass reversing thermometers (protected/unprotected)
+7070,BOTTLE: Titroprocessor - Metrohm 682
+7080,BOTTLE: Autoanalyzer - Alpkem 
+801,UNDERWAY: MK3 data recording tag (Wildlife Computers) mounted on elephant seal
+802,UNDERWAY: THERMOSALINOGRAPH; UNKNOWN BRAND and MODEL
+803,UNDERWAY: SEACAT Thermosalinograph SBE 21 (Sea-Bird Electronics; Inc.)
+1301,ANIMAL MOUNTED: TDR (Time-Depth Recorder) Tag (Wildlife Computers)
+1302,ANIMAL MOUNTED: Satellite Relay Data Logger (SRDL) (SMRU Instrumentation)
+1303,ANIMAL MOUNTED: CTD Oceanography Satellite Relay Data Logger (SRDL) (SMRU Instrumentation)
