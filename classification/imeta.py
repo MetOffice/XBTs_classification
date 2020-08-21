@@ -74,9 +74,9 @@ def _get_arguments():
     parser = argparse.ArgumentParser(description=description)
     help_msg = ('The path to the directory containing the XBT dataset in csv '
                 'form, one file per year.')
-    parser.add_argument('--input-path', dest='input_path', help=help_msg)
+    parser.add_argument('--input-path', dest='input_path', help=help_msg, required=True)
     help_msg = 'The path to where imeta classification and metric outputs will be written.'
-    parser.add_argument('--output-path', dest='output_path', help=help_msg)
+    parser.add_argument('--output-path', dest='output_path', help=help_msg, required=True)
     help_msg = 'The start year of the range to output.'
     parser.add_argument('--start-year', dest='start_year', help=help_msg, default=None, type=int)
     help_msg = 'The end year of the range to output.'
@@ -90,7 +90,11 @@ def generate_imeta():
     
     user_args = _get_arguments()
     print('reading data')
-    date_range = (user_args.start_year, user_args.end_year)
+    
+    if user_args.start_year is None or user_args.end_year is None:
+        date_range = None
+    else:
+        date_range = (user_args.start_year, user_args.end_year)
     xbt_full = dataexploration.xbt_dataset.XbtDataset(user_args.input_path, 
                                                       date_range )
     # generate encoders for getting ML formatted data

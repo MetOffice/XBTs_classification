@@ -1,7 +1,10 @@
 {"input_features": ["country", "lat", "lon", "max_depth", "year"],
  "output_feature":"instrument",
- "year_range": [1966,2015],
  "parallel_jobs": -1,
+ "preproc": {
+         "prefix": "ocldb",
+         "suffix": "nc"
+ },
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],

@@ -15,6 +15,8 @@ import pandas
 IQUOD_TEMPLATE = 'iquod_xbt_{year}.nc'
 XBT_OUT_TEMPLATE = 'xbt_{year}.csv'
 
+DEFAULT_TEMP_DIR = '/scratch'
+
 DEFAULT_PREPROC_TASKS = 4
 
 def _stringify(cell):
@@ -145,10 +147,10 @@ def process_args():
     help_msg = 'The path to the directory containing the WOD netCDF4 files with XBT profiles.'
     parser.add_argument('--input-path', dest='input_path', help=help_msg,  required=True)
     help_msg = 'The path to the directory for outputting per year XBT CSV files.'
-    parser.add_argument('--output-path', dest='output_path', help=help_msg)
+    parser.add_argument('--output-path', dest='output_path', help=help_msg, required=True)
     help_msg = ('The directory to write out the intermediate CSV files after '
                 'preprocessing before they are join and split by year.')
-    parser.add_argument('--temp-path', dest='temp_path', help=help_msg, default='/scratch')
+    parser.add_argument('--temp-path', dest='temp_path', help=help_msg, default=DEFAULT_TEMP_DIR)
     help_msg = 'The start year of the range to output.'
     parser.add_argument('--start-year', dest='start_year', help=help_msg, default=None, type=int)
     help_msg = 'The end year of the range to output.'
@@ -161,7 +163,7 @@ def process_args():
     parser.add_argument('--suffix', help=help_msg, required=True)
     return parser.parse_args()    
 
-def do_wod_extract(nc_dir, out_dir, temp_dir, start_year, end_year, fname_prefix, fname_suffix, pool_size):
+def do_wod_extract(nc_dir, out_dir, fname_prefix, fname_suffix, temp_dir, start_year=None, end_year=None, pool_size=DEFAULT_PREPROC_TASKS):
     start1 = time.time()
     pattern1 = fname_prefix + '([\w\d\.]+)' + fname_suffix        
     nc_path_list = get_input_file_list(nc_dir, pattern1)
