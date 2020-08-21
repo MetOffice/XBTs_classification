@@ -5,11 +5,13 @@ import functools
 import datetime
 import dask.dataframe
 import numpy
+import tempfile
 import sklearn.preprocessing
 
 import preprocessing.extract_year
 import xbt.common
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
+XBT_CSV_REGEX_STR = 'xbt_(?P<year>[0-9]+).csv'
 
 INSTRUMENT_REGEX_STRING = 'XBT[:][\s](?P<model>[\w\s;:-]+)([\s]*)([(](?P<manufacturer>[\w\s.:;-]+)[)])?'
 REGEX_MANUFACTURER_GROUP = 'manufacturer'
@@ -247,17 +249,37 @@ class XbtDataset():
             self._load_data() 
 
     def _load_data(self):
+        if self.year_range is None:
+            start_year = None
+            end_year = None
+        else:
+            start_year = self.year_range[0]
+            end_year = self.year_range[1]
+        
         if self.nc_directory is not None:
-            preprocessing.extract_year.do_wod_extract(
-                nc_dir=self.nc_directory, 
-                out_dir=self.directory, 
-                start_year=self.year_range[0], 
-                end_year=self.year_range[1], 
-                fname_prefix=self.pp_prefix, 
-                fname_suffix=self.pp_suffix, 
-                pool_size=preprocessing.extract_year.DEFAULT_PREPROC_TASKS,                
+            #create a temp subdirectory to be used in the preprocessing, which will then be deleted after preprocessing.
+            with tempfile.TemporaryDirectory(dir=self.directory) as temp_dir:
+                preprocessing.extract_year.do_wod_extract(
+                    nc_dir=self.nc_directory, 
+                    out_dir=self.directory, 
+                    temp_dir=temp_dir,
+                    start_year=start_year, 
+                    end_year=end_year, 
+                    fname_prefix=self.pp_prefix, 
+                    fname_suffix=self.pp_suffix, 
+                    pool_size=preprocessing.extract_year.DEFAULT_PREPROC_TASKS,                
             )
-        self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(self.year_range[0], self.year_range[1]+1)]            
+            
+        
+        if self.year_range is None:
+            year_list = [int(re.search(XBT_CSV_REGEX_STR, fname1).group('year')) for fname1 in os.listdir(self.directory)]
+            start_year = min(year_list)
+            end_year = max(year_list)
+            self.year_range = (start_year, end_year)
+            print(f'derived year range from data: {start_year} to {end_year}')
+
+        self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(start_year, end_year+1)]
+        self.dataset_files = [f1 for f1 in self.dataset_files if os.path.isfile(f1)]
         df_in_list = [self._read_func(year_csv_path, self.features_to_load) for year_csv_path in self.dataset_files]
         df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
         self.xbt_df = self._concat_func(df_processed)

@@ -75,7 +75,7 @@ class ClassificationExperiment(object):
         
         self.ens_unseen_fraction = 0.1        
         # load experiment definition from json file
-        self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
+        self.primary_keys = ['learner', 'input_features', 'output_feature', 'tuning', 'split', 'experiment_name']
         self.read_json_file()
         
         if preproc_dir is not None:
@@ -420,6 +420,10 @@ class ClassificationExperiment(object):
                 pp_prefix=self.preproc_params['prefix'],
                 pp_suffix=self.preproc_params['suffix'],
             )
+        # get the year range from the data once it has loaded if it was not specified previously
+        if self.year_range is None:
+            self.year_range = self.dataset.year_range
+            
         self.xbt_labelled = self.dataset.filter_obs({'labelled': 'labelled'})
         
         # initialise the feature encoders on the labelled data
@@ -451,7 +455,11 @@ class ClassificationExperiment(object):
         
         self.json_params = dictionary
         self.experiment_name = self.json_params['experiment_name']
-        self.year_range = (self.json_params['year_range'][0], self.json_params['year_range'][1])
+        try: 
+            self.year_range = (self.json_params['year_range'][0], self.json_params['year_range'][1])
+        except:
+            self.year_range = None # if not set, this will be derived from the data.
+            
         self.input_features = self.json_params['input_features']
         self.target_feature = self.json_params['output_feature']
         

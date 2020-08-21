@@ -8,16 +8,16 @@ from classification import experiment
 def _get_arguments(description):
     parser = argparse.ArgumentParser(description=description)
     help_msg = 'The path to the JSON file containing the experiment definition.'
-    parser.add_argument('--json-experiment', dest='json_experiment', help=help_msg)
+    parser.add_argument('--json-experiment', dest='json_experiment', help=help_msg, required=True)
     help_msg = ('The path to the directory containing the XBT dataset in csv '
                 'form, one file per year. If --preproc-path is defined, these '
                 'input files will be created by the preprocessing step and '
                 'written to this location.')
-    parser.add_argument('--input-path', dest='input_path', help=help_msg)
+    parser.add_argument('--input-path', dest='input_path', help=help_msg, required=True)
     help_msg = 'The path to the directory containing files to be preprocessed, typically netCDF files from WOD or similar source.'
     parser.add_argument('--preproc-path', dest='preproc_path', help=help_msg, default=None)
     help_msg = 'The path to the directory for experimenting output. A subdirectory will be created using the experiment name.'
-    parser.add_argument('--output-path', dest='output_path', help=help_msg)
+    parser.add_argument('--output-path', dest='output_path', help=help_msg, required=True)
     help_msg = 'Specify whether classification output should be in a single file, or split by year or month.'
     parser.add_argument('--output-file-split', 
                         dest='output_file_split', 
