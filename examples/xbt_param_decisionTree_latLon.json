@@ -1,7 +1,10 @@
 {"input_features": ["lat", "lon", "max_depth", "year"],
  "output_feature":"instrument",
- "year_range": [1966,2015],
  "parallel_jobs": 8,
+"preproc": {
+         "prefix": "ocldb",
+         "suffix": "nc"
+ },
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
@@ -13,7 +16,7 @@
             "python_class":"DecisionTreeClassifier",
             "name": "DecisionTree"
            },
- "tuning":{"param_grid":{"max_depth": [null, 5,10,20], 
+ "tuning":{"param_grid":{"max_depth": [20, 5,10,null], 
                          "min_samples_leaf": [1,2,5], 
                          "criterion": ["gini", "entropy"]           
                         },

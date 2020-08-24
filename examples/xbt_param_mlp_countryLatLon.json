@@ -1,6 +1,6 @@
-{"input_features": ["country", "lat", "lon", "max_depth", "year"],
+{"input_features": ["country", "max_depth", "year","lat","lon"],
  "output_feature":"instrument",
- "parallel_jobs": 4,
+ "parallel_jobs": 1,
 "preproc": {
          "prefix": "ocldb",
          "suffix": "nc"
@@ -8,16 +8,17 @@
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
-          "num_unseen_splits": 5,
-          "num_training_splits": 5
+          "num_unseen_splits": 3,
+          "num_training_splits": 3
         },
- "experiment_name": "RandomForest_countryLatLon",
- "learner":{"module_name": "sklearn.ensemble",
-            "python_class":"RandomForestClassifier",
-            "name": "RandomForest"
+ "experiment_name": "mlp_countryLatLon",
+ "learner":{"module_name":"sklearn.neural_network",
+            "python_class":"MLPClassifier",
+            "name": "MLP"
            },
- "tuning":{"param_grid":{"max_depth": [20, 5,10], 
-                         "n_estimators": [50]
+ "tuning":{"param_grid":{ "hidden_layer_sizes": [[10, 10], [20, 20]],
+                         "alpha": [1e-4],
+                         "max_iter": [1000]
                         },
            "scoring":"recall_micro",
            "n_jobs":1,

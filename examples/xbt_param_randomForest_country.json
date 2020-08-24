@@ -1,4 +1,4 @@
-{"input_features": ["country", "lat", "lon", "max_depth", "year"],
+{"input_features": ["country", "max_depth", "year"],
  "output_feature":"instrument",
  "parallel_jobs": 4,
 "preproc": {
@@ -11,7 +11,7 @@
           "num_unseen_splits": 5,
           "num_training_splits": 5
         },
- "experiment_name": "RandomForest_countryLatLon",
+ "experiment_name": "RandomForest_country",
  "learner":{"module_name": "sklearn.ensemble",
             "python_class":"RandomForestClassifier",
             "name": "RandomForest"

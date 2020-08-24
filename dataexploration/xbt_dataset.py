@@ -5,9 +5,13 @@ import functools
 import datetime
 import dask.dataframe
 import numpy
+import tempfile
 import sklearn.preprocessing
 
+import preprocessing.extract_year
+import xbt.common
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
+XBT_CSV_REGEX_STR = 'xbt_(?P<year>[0-9]+).csv'
 
 INSTRUMENT_REGEX_STRING = 'XBT[:][\s](?P<model>[\w\s;:-]+)([\s]*)([(](?P<manufacturer>[\w\s.:;-]+)[)])?'
 REGEX_MANUFACTURER_GROUP = 'manufacturer'
@@ -17,7 +21,7 @@ UNKNOWN_STR = 'UNKNOWN'
 UNKNOWN_MODEL_STR = 'TYPE UNKNOWN'
 UNKNOWN_MANUFACTURER_STR = 'UNKNOWN BRAND'
 
-CQ_FLAG = 'classification_quality_flag'
+PREDICTABLE_FLAG = 'is_predictable'
 
 EXCLUDE_LIST = ['Unnamed: 0']
 KEY_DICT = {
@@ -48,18 +52,6 @@ def check_value_found(ref, value):
 
 def check_cat_value_allowed(allowed, value):
     return value in allowed
-
-def get_year(dt_str):
-    try:
-        dt1 = datetime.datetime.strptime(dt_str,'%Y%m%d')
-        year = dt1.year
-        month = dt1.month
-        day = dt1.day
-    except ValueError:
-        year = 0
-        month=0
-        day = 0
-    return year, month, day
 
 def normalise_lat(feature_lat, do_transform=True):
     encoder = sklearn.preprocessing.MinMaxScaler()
@@ -156,16 +148,14 @@ CATEGORICAL_LOADED_FEATURES = [
 CATEGORICAL_GENERATED_FEATURES = []
 CATEGORICAL_FEATURES = CATEGORICAL_LOADED_FEATURES + CATEGORICAL_GENERATED_FEATURES
 
-TARGET_LOADED_FEATURES = [ 'instrument', ]
-TARGET_GENERATED_FEATURES = [
-    'model', 'manufacturer',
-]
+TARGET_LOADED_FEATURES = ['instrument', 'model', 'manufacturer', ]
+TARGET_GENERATED_FEATURES = []
 TARGET_FEATURES = TARGET_LOADED_FEATURES + TARGET_GENERATED_FEATURES
 
 PROFILE_FEATURES = ['temperature_profile', 'depth_profile']
 QUALITY_FLAG_FEATURES = ['temperature_quality_flag', 'depth_quality_flag']
 ID_FEATURES = ['id']
-ORDINAL_FEATURES = ['year']
+ORDINAL_FEATURES = ['year', 'month', 'day']
 MINMAX_FEATURES = ['max_depth']
 NORMAL_DIST_FEATURES = []
 CUSTOM_FEATURES = ['lat', 'lon']
@@ -191,7 +181,8 @@ TARGET_PROCESSORS.update({f1: get_cat_ml_feature for f1 in TARGET_FEATURES})
 
 
 OUTPUT_FORMATTERS = {}
-OUTPUT_FORMATTERS.update({f1: cat_output_formatter for f1 in CATEGORICAL_FEATURES})
+OUTPUT_FORMATTERS.update({f1: [cat_output_formatter] for f1 in CATEGORICAL_FEATURES + TARGET_LOADED_FEATURES})
+
 
 
 TRAIN_SET_FEATURE = 'training_set'
@@ -213,14 +204,6 @@ def do_concat(df_list, axis=1, ignore_index=True):
 
 
 def do_preprocessing(xbt_df):
-    # Model and manufacturer are stored in the CSV file as a single string called "instrument type", separating into 
-    # seprate columns for learning these separately 
-    xbt_df['model'] = xbt_df.instrument.apply(get_model)
-    xbt_df['manufacturer'] = xbt_df.instrument.apply(get_manufacturer)
-    date_columns = ['year','month','day']
-    date_elements = pandas.DataFrame(list(xbt_df.date.apply(str).apply(get_year)), columns=date_columns)
-    for col1 in date_columns:
-        xbt_df[col1] = date_elements[col1]
     # exclude bad dates
     xbt_df = xbt_df[xbt_df['year'] != 0]
     # exclude bad depths
@@ -231,11 +214,11 @@ def do_preprocessing(xbt_df):
 
 
 class XbtDataset():
-    def __init__(self, directory, year_range, df=None, use_dask=False, load_profiles=False, load_quality_flags=False):
+    def __init__(self, directory, year_range, df=None, use_dask=False, load_profiles=False, load_quality_flags=False, nc_dir=None, pp_prefix='', pp_suffix=''):
         self._use_dask = use_dask
         self._load_profiles = load_profiles
         self._load_quality_flags = load_quality_flags
-        self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES + TARGET_LOADED_FEATURES
+        self.features_to_load = CATEGORICAL_LOADED_FEATURES + MINMAX_FEATURES + CUSTOM_FEATURES + ID_FEATURES + OTHER_FEATURES + TARGET_LOADED_FEATURES + ORDINAL_FEATURES
         if self._load_profiles:
             self.features_to_load += PROFILE_FEATURES
         if self._load_quality_flags:
@@ -248,17 +231,55 @@ class XbtDataset():
             self._read_func = read_csv
             self._preproc_func = do_preprocessing
             self._concat_func = do_concat
+        self.nc_directory = nc_dir # if this is defined then do a preprocessing step
+        self.pp_prefix = pp_prefix
+        self.pp_suffix = pp_suffix
+        
         self.directory = directory
         self.year_range = year_range
-        self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(year_range[0], year_range[1]+1)]
+        
+        #this will be created in load files, which may happen after preprocessing
+        self.dataset_files = []
         self.xbt_df = df
         self._feature_encoders = {}
         self._target_encoders = {}
         self._output_formatters = OUTPUT_FORMATTERS
+        
         if self.xbt_df is None:
             self._load_data() 
 
     def _load_data(self):
+        if self.year_range is None:
+            start_year = None
+            end_year = None
+        else:
+            start_year = self.year_range[0]
+            end_year = self.year_range[1]
+        
+        if self.nc_directory is not None:
+            #create a temp subdirectory to be used in the preprocessing, which will then be deleted after preprocessing.
+            with tempfile.TemporaryDirectory(dir=self.directory) as temp_dir:
+                preprocessing.extract_year.do_wod_extract(
+                    nc_dir=self.nc_directory, 
+                    out_dir=self.directory, 
+                    temp_dir=temp_dir,
+                    start_year=start_year, 
+                    end_year=end_year, 
+                    fname_prefix=self.pp_prefix, 
+                    fname_suffix=self.pp_suffix, 
+                    pool_size=preprocessing.extract_year.DEFAULT_PREPROC_TASKS,                
+            )
+            
+        
+        if self.year_range is None:
+            year_list = [int(re.search(XBT_CSV_REGEX_STR, fname1).group('year')) for fname1 in os.listdir(self.directory)]
+            start_year = min(year_list)
+            end_year = max(year_list)
+            self.year_range = (start_year, end_year)
+            print(f'derived year range from data: {start_year} to {end_year}')
+
+        self.dataset_files = [os.path.join(self.directory, XBT_FNAME_TEMPLATE.format(year=year)) for year in range(start_year, end_year+1)]
+        self.dataset_files = [f1 for f1 in self.dataset_files if os.path.isfile(f1)]
         df_in_list = [self._read_func(year_csv_path, self.features_to_load) for year_csv_path in self.dataset_files]
         df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
         self.xbt_df = self._concat_func(df_processed)
@@ -280,6 +301,8 @@ class XbtDataset():
                                          
                 elif value == 'imeta':
                     check1 =  (xbt_df['imeta_applied'] == 1)
+                elif value == 'all':
+                    check1 = (xbt_df['imeta_applied'] == 0) | (xbt_df['imeta_applied'] != 0)
             else:
                 if check_type == 'match_subset':
                     try:
@@ -300,15 +323,22 @@ class XbtDataset():
         subset_df = self.xbt_df[included_in_subset] 
         return subset_df
     
-    def sample_feature_values(self, feature, fraction):
+    def sample_feature_values(self, feature, fraction, split_feature=None):
         """
         Get a sample of the unique values in a categorical feature. For example,
         if the feature is cruise_number, the fraction is 0.1 and there are 100 
         unique values in the feature cruise_number, you will get a list
         with 10 values of cruise_number.
         """
-        df_values = pandas.DataFrame({feature: self.xbt_df[feature].unique()})
-        sample_values = list(df_values.sample(frac=fraction)[feature])
+        if split_feature is None:
+            df_values = pandas.DataFrame(self.xbt_df[feature].unique(), columns=[feature])
+            sample_values = list(df_values.sample(frac=fraction)[feature])
+        else:
+            sample_values = []
+            for sfv1 in self.xbt_df[split_feature].unique():
+                df_values = pandas.DataFrame(self.xbt_df[self.xbt_df[split_feature] == sfv1][feature].unique(), 
+                                             columns=[feature])
+                sample_values += list(df_values.sample(frac=fraction)[feature])
         return sample_values
         
     def filter_obs(self, filters, mode='include', check_type='match_subset'):
@@ -347,8 +377,8 @@ class XbtDataset():
             axis='columns',
         )
                 
-        self.xbt_df[CQ_FLAG] = 0
-        self.xbt_df.loc[self.xbt_df.index[filter_values], CQ_FLAG] = 1
+        self.xbt_df[PREDICTABLE_FLAG] = 0
+        self.xbt_df.loc[self.xbt_df.index[filter_values], PREDICTABLE_FLAG] = 1
         subset = self.xbt_df[filter_values]
         xbt_predictable = XbtDataset(
             year_range=self.year_range, 
@@ -379,16 +409,47 @@ class XbtDataset():
                                               list(self.xbt_df[f1].unique()))
         return checkers
     
-    def output_data(self, out_path, target_features=None):
+    def output_data(self, out_dir, fname_template, exp_name, target_features=[], output_split=xbt.common.OUTPUT_SINGLE):
         out_df = self.xbt_df
         for feat1 in target_features:
             try:
-                out_df = out_df.join(
-                    self._output_formatters[feat1](
-                        feat1, out_df[[feat1]], self._target_encoders[feat1]))
+                for formatter1 in self._output_formatters[feat1]:
+                    out_df = out_df.join(formatter1(feat1, 
+                                                    out_df[[feat1]], 
+                                                    self._target_encoders[feat1]))
             except KeyError:
                 print(f'cannot output ML feature {feat1}, no formatter available.')
-        out_df.to_csv(out_path)
+        if output_split == xbt.common.OUTPUT_SINGLE:
+                        
+
+            out_path = os.path.join(out_dir,
+                                    fname_template.format(exp_name=exp_name,
+                                                          subset='all')
+                                   )
+            print(f'output all predictions to {out_path}')
+            out_df.to_csv(out_path)
+        elif output_split == xbt.common.OUTPUT_YEARLY:
+            print('output predictions by year to {0}'.format(
+                os.path.join(out_dir, fname_template.format(exp_name=exp_name,
+                                                            subset='YYYY')
+                                       )))
+            for current_year in out_df.year.unique():
+                out_path = os.path.join(out_dir,
+                                        fname_template.format(exp_name=exp_name,
+                                                              subset=f'{current_year:04d}')
+                                       )
+                out_df[out_df.year == current_year].to_csv(out_path)
+        elif output_split == xbt.common.OUTPUT_MONTHLY:
+            print('output predictions by month to {0}'.format(
+                os.path.join(out_dir, fname_template.format(exp_name=exp_name,
+                                                            subset='YYYYMM')
+                                       )))
+            for current_year in out_df.year.unique():
+                for current_month in range(0,12):
+                    out_path = os.path.join(out_dir,
+                                            fname_template.format(exp_name=exp_name,
+                                                                  subset=f'{current_year:04d}{current_month:02d}'))
+                    out_df[(out_df.year == current_year) & (out_df.month == current_month)].to_csv(out_path)
     
     def merge_features(self, other, features_to_merge, fill_values=None, feature_encoders=None, target_encoders=None, output_formatters=None):
         merged_df = self.xbt_df.merge(other.xbt_df[['id'] + features_to_merge], on='id', how='outer')

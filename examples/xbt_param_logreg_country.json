@@ -1,6 +1,6 @@
-{"input_features": ["country", "lat", "lon", "max_depth", "year"],
+{"input_features": ["country", "max_depth", "year"],
  "output_feature":"instrument",
- "parallel_jobs": 4,
+ "parallel_jobs": 8,
 "preproc": {
          "prefix": "ocldb",
          "suffix": "nc"
@@ -11,13 +11,14 @@
           "num_unseen_splits": 5,
           "num_training_splits": 5
         },
- "experiment_name": "RandomForest_countryLatLon",
- "learner":{"module_name": "sklearn.ensemble",
-            "python_class":"RandomForestClassifier",
-            "name": "RandomForest"
+ "experiment_name": "logreg_country",
+ "learner":{"module_name":"sklearn.linear_model",
+            "python_class":"LogisticRegression",
+            "name": "LogisticRegression"
            },
- "tuning":{"param_grid":{"max_depth": [20, 5,10], 
-                         "n_estimators": [50]
+ "tuning":{"param_grid":{"tol": [1e-3,5e-4, 1e-4], 
+                         "C": [0.5, 1.0,2.0],
+                         "max_iter": [500]
                         },
            "scoring":"recall_micro",
            "n_jobs":1,

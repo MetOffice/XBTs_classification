@@ -11,21 +11,31 @@ import pandas
 import time
 import sklearn.metrics
 
+
 from preprocessing.data_preprocessing import  DataPreprocessor
 pandas.options.mode.chained_assignment = None
 
+import xbt.common
+import dataexploration.wod
 import dataexploration.xbt_dataset
 from classification.imeta import imeta_classification, XBT_MAX_DEPTH
 
 
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
-OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{name}.csv'
+SCORE_FNAME_TEMPLATE = 'xbt_score_{name}.csv'
+OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{exp_name}_{subset}.csv'
 CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
-DATESTAMP_TEMPLATE = '{dt.year:04d}{dt.month:02d}{dt.day:02d}_{dt.hour:02d}{dt.minute:02d}'
 
 UNSEEN_FOLD_NAME = 'unseen_fold'
 RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
 PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat}'
+MAX_PROB_FEATURE_NAME = '{target}_max_prob'
+
+OUTPUT_CQ_FLAG = 'classification_quality_flag_{var_name}'
+OUTPUT_CQ_INPUT = 0
+OUTPUT_CQ_ML = 1
+OUTPUT_CQ_IMETA = 2
+
 
 class NumpyEncoder(json.JSONEncoder):
     """Encoder to print the result of tuning into a json file"""
@@ -42,10 +52,12 @@ class ClassificationExperiment(object):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
-    def __init__(self, json_descriptor, data_dir, output_dir):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, preproc_dir=None):
         # assign arguments
         self.data_dir = data_dir
         self.root_output_dir = output_dir
+        self.output_split = output_split
+        self.preproc_dir = preproc_dir
         self.json_descriptor = json_descriptor
         
         # initialise to None where appropriate
@@ -58,42 +70,60 @@ class ClassificationExperiment(object):
         self._exp_datestamp = None
         self.classifier_fnames = None
         self.experiment_description_dir = None
+        self.score_table = None
+        self._wod_encoders = {k1: enc_class1() for k1, enc_class1 in dataexploration.wod.get_wod_encoders().items()}
         
+        self.ens_unseen_fraction = 0.1        
         # load experiment definition from json file
-        self.primary_keys = ['learner', 'input_features', 'output_feature','year_range', 'tuning', 'split', 'experiment_name']
+        self.primary_keys = ['learner', 'input_features', 'output_feature', 'tuning', 'split', 'experiment_name']
         self.read_json_file()
+        
+        if preproc_dir is not None:
+            if self.preproc_params is None:
+                raise RuntimeError('preprocessing parameters must be specified in the JSON '
+                                   'experiment definition if preprocessing is requested '
+                                   'by specify a directory for files to be preprocessed.')
+        
         self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
         
         
-    def _generate_exp_datestamp(self):
-        self._exp_datestamp = DATESTAMP_TEMPLATE.format(dt=datetime.datetime.now())
         
     def run_single_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
         self._check_output_dir()
-        self._generate_exp_datestamp()
+        self._exp_datestamp = xbt.common.generate_datestamp()
 
+        start1 = time.time()
         print('loading dataset')
         self.load_dataset()
-        # get train/test/unseen sets
         
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating splits')
         X_dict, y_dict, df_dict = self.get_train_test_unseen_sets()
             
         # fit classifier
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('training classifier')
         clf1 = self.train_classifier(X_dict['train'], y_dict['train'])
         
         # generate scores
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating metrics')
-        metrics_train = self.generate_metrics(clf1, df_dict['train'], 'train')        
-        metrics_test = self.generate_metrics(clf1, df_dict['test'], 'test')
+        metrics_train, score_train = self.generate_metrics(clf1, df_dict['train'], 'train', 'train')        
+        metrics_test, score_test = self.generate_metrics(clf1, df_dict['test'], 'test', 'test')
         exp_results = pandas.merge(metrics_train, metrics_test, on='year')
-        metrics_unseen = self.generate_metrics(clf1, df_dict['unseen'], 'unseen')
+        metrics_unseen, score_unseen = self.generate_metrics(clf1, df_dict['unseen'], 'unseen', 'unseen')
         exp_results = exp_results.merge(metrics_unseen, on='year')
         
+        self.score_table = pandas.DataFrame.from_records([score_train, score_test, score_unseen])
+        
         # generate imeta
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating imeta output')
         exp_results = exp_results.merge(self.score_imeta(df_dict['train'], 'train'), on='year')
         exp_results = exp_results.merge(self.score_imeta(df_dict['test'], 'est'), on='year')
@@ -108,9 +138,13 @@ class ClassificationExperiment(object):
             self.results.to_csv(
                 os.path.join(self.exp_output_dir,
                              RESULT_FNAME_TEMPLATE.format(name=out_name)))
-        
+            self.score_table.to_csv(
+                os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
         
         # generate imeta algorithm results for the whole dataset
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('generating predictions for the whole dataset.')
         imeta_df = self.generate_imeta(self.dataset)
         imeta_df = imeta_df.rename(
@@ -126,14 +160,17 @@ class ClassificationExperiment(object):
                                                    )
         self.generate_prediction(self.classifiers[0], feature_name)
         
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
-            print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                os.path.join(self.exp_output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
-                target_features=[feature_name])
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[feature_name],
+            )
             
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -141,42 +178,47 @@ class ClassificationExperiment(object):
             
         return (self.results, self.classifiers)
     
-    def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+    def _do_ensemble_experiment(self, classifier_obj, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
-        self._check_output_dir()
-        self._generate_exp_datestamp()
         
+        self._check_output_dir()
+        self._exp_datestamp = xbt.common.generate_datestamp()
+        
+        start1 = time.time()
         print('loading dataset')
         self.load_dataset()
+        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        
+        
         # get train/test/unseen sets
         print('generating splits')
-        self.xbt_labelled.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)        
+        # using this function to ensure an even split by year seems to cause a dramatiuc degradation of classification results, so turning this off for now,
+        # I suspect there is a bug in the function that is doing something weird to the split
+        # ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature, fraction=self.ens_unseen_fraction, split_feature='year')
+
+        ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature, fraction=self.ens_unseen_fraction)
+        xbt_ens_unseen = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers}, mode='include', check_type='in_filter_set')
+        xbt_ens_working = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers}, mode='exclude', check_type='in_filter_set')        
         
-        X_labelled = self.xbt_labelled.filter_features(self.input_features).get_ml_dataset()[0]
-        y_labelled = self.xbt_labelled.filter_features([self.target_feature]).get_ml_dataset()[0]
+        X_ens_working = xbt_ens_working.filter_features(self.input_features).get_ml_dataset()[0]
+        y_ens_working = xbt_ens_working.filter_features([self.target_feature]).get_ml_dataset()[0]
         
-        # create objects for cross validation and hyperparameter tuning
-        # first set up objects for the inner cross validation, which run for each
-        # set of hyperparameters in the grid search.
-        print('creating hyperparameter tuning objects')
+        xbt_ens_working.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)
+        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
 
         group_cv1 = sklearn.model_selection.GroupKFold(n_splits=self.num_unseen_splits)
-        classifier_obj = self.classifier_class(**self._default_classifier_opts)
-        grid_search_cv = sklearn.model_selection.GridSearchCV(
-            classifier_obj,
-            param_grid = self._tuning_dict['param_grid'],  
-            scoring=self._tuning_dict['scoring'],
-            cv=self.num_training_splits,
-        )
-        
         # now run the outer cross-validation with the grid search HPT as the classifier,
         # so for each split, HPT will be run with CV on each set of hyperparameters
         print('running cross validation')
         scores = sklearn.model_selection.cross_validate(
-            grid_search_cv,
-            X_labelled, y_labelled, 
-            groups=self.xbt_labelled[UNSEEN_FOLD_NAME], 
+            classifier_obj,
+            X_ens_working, y_ens_working, 
+            groups=xbt_ens_working[UNSEEN_FOLD_NAME], 
             cv=group_cv1,
             return_estimator=self.return_estimator,
             return_train_score=self.return_train_score,
@@ -184,33 +226,62 @@ class ClassificationExperiment(object):
             n_jobs=self._n_jobs,
         )        
 
+        
         self._cv_output = scores
         self.classifiers = {split_num: est1 
                             for split_num, est1 in enumerate(scores['estimator'])}
        
+        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating probabilities for evaluation.')
+        
+        (df_ens_working, 
+         df_ens_unseen, 
+         metrics_df_ens,
+        ens_scores_list) =self._evaluate_vote_probs(xbt_ens_working,
+                                                    xbt_ens_unseen,
+                                                    scores,
+                                                   )
+        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         print('calculating metrics')
         metrics_list = {}
+        scores_list = ens_scores_list
         for split_num, estimator in self.classifiers.items():
-            xbt_train = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
-            xbt_test = self.xbt_labelled.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
-            train_metrics = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num))
-            test_metrics = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num))
-            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')        
+            xbt_train = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
+            xbt_test = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
+            train_metrics, train_scores = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num), 'train')
+            test_metrics, test_scores = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num), 'test')
+            unseen_metrics, unseen_scores = self.generate_metrics(estimator, xbt_ens_unseen, 'unseen_{0}'.format(split_num), 'unseen' )            
+            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')   
+            scores_list += [train_scores, test_scores, unseen_scores]
 
+        self.score_table = pandas.DataFrame.from_records(scores_list)
+        print('overall scores for trained classifiers:')
+        print(self.score_table)
+            
         metrics_df_merge = None
         for label1, metrics1  in metrics_list.items():
             if metrics_df_merge is None:
                 metrics_df_merge = metrics1
             else:
-                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1)            
+                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1, on='year')     
+        metrics_df_merge = pandas.merge(metrics_df_merge, metrics_df_ens, on='year')
         self.results = metrics_df_merge
-
-        # output results to a file
+        
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
         if write_results:
+            print('output results to a file')
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
             self.results.to_csv(
                 os.path.join(self.exp_output_dir,
                              RESULT_FNAME_TEMPLATE.format(name=out_name)))
+            self.score_table.to_csv(
+                os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
         
         
         # generate imeta algorithm results for the whole dataset
@@ -222,7 +293,9 @@ class ClassificationExperiment(object):
             })
         self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
         
-        # run prediction on full dataset
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print(' run prediction on full dataset')
         result_feature_names = []
         for split_num, estimator in self.classifiers.items():
             res_name = RESULT_FEATURE_TEMPLATE.format(
@@ -235,15 +308,18 @@ class ClassificationExperiment(object):
         # generate vote count probabilities from the different trained classifiers
         self.generate_vote_probabilities(result_feature_names)
         
-        # output predictions
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('output predictions')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
-            print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                os.path.join(self.exp_output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
-                target_features=[])
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[],
+            )
                     
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -251,11 +327,36 @@ class ClassificationExperiment(object):
             
         return (self.results, self.classifiers)
     
+    def run_cv_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        print('using classifier opts:\n' + str(self._default_classifier_opts))
+        classifier_obj = self.classifier_class(**self._default_classifier_opts)
+        return self._do_ensemble_experiment(classifier_obj, 
+                                      write_results, 
+                                      write_predictions, 
+                                      export_classifiers)
+        
+    def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        # create objects for cross validation and hyperparameter tuning
+        # first set up objects for the inner cross validation, which run for each
+        # set of hyperparameters in the grid search.
+        classifier_obj = self.classifier_class(**self._default_classifier_opts)
+        grid_search_cv = sklearn.model_selection.GridSearchCV(
+            classifier_obj,
+            param_grid = self._tuning_dict['param_grid'],  
+            scoring=self._tuning_dict['scoring'],
+            cv=self.num_training_splits,
+        )
+        return self._do_ensemble_experiment(grid_search_cv, 
+                                      write_results, 
+                                      write_predictions, 
+                                      export_classifiers)
+    
+    
     def run_inference(self, write_predictions=True):
         """
         """
         self._check_output_dir()
-        self._generate_exp_datestamp()
+        self._exp_datestamp = xbt.common.generate_datestamp()
         
         print('loading dataset')
         self.load_dataset()
@@ -290,12 +391,13 @@ class ClassificationExperiment(object):
         
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            out_path = os.path.join(self.exp_output_dir, OUTPUT_FNAME_TEMPLATE.format(name=out_name))
-            print(f'output predictions to {out_path}')
             self.dataset.output_data(
-                os.path.join(self.exp_output_dir, 
-                             OUTPUT_FNAME_TEMPLATE.format(name=out_name)),
-                target_features=[])
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[],
+            )
                     
         return self.classifiers
     
@@ -305,7 +407,23 @@ class ClassificationExperiment(object):
         create a XBTDataset
         only load the specified input and target features, taken from the parameters JSON file
         """
-        self.dataset = dataexploration.xbt_dataset.XbtDataset(self.data_dir, self.year_range)
+        if self.preproc_dir is None:
+            self.dataset = dataexploration.xbt_dataset.XbtDataset(
+                self.data_dir, 
+                self.year_range, 
+            )
+        else:
+            self.dataset = dataexploration.xbt_dataset.XbtDataset(
+                self.data_dir, 
+                self.year_range, 
+                nc_dir=self.preproc_dir,
+                pp_prefix=self.preproc_params['prefix'],
+                pp_suffix=self.preproc_params['suffix'],
+            )
+        # get the year range from the data once it has loaded if it was not specified previously
+        if self.year_range is None:
+            self.year_range = self.dataset.year_range
+            
         self.xbt_labelled = self.dataset.filter_obs({'labelled': 'labelled'})
         
         # initialise the feature encoders on the labelled data
@@ -337,7 +455,11 @@ class ClassificationExperiment(object):
         
         self.json_params = dictionary
         self.experiment_name = self.json_params['experiment_name']
-        self.year_range = (self.json_params['year_range'][0], self.json_params['year_range'][1])
+        try: 
+            self.year_range = (self.json_params['year_range'][0], self.json_params['year_range'][1])
+        except:
+            self.year_range = None # if not set, this will be derived from the data.
+            
         self.input_features = self.json_params['input_features']
         self.target_feature = self.json_params['output_feature']
         
@@ -348,6 +470,12 @@ class ClassificationExperiment(object):
         self.unseen_fraction = 1.0 / self.num_unseen_splits
         self.unseen_feature = self.json_params['split']['unseen_feature']
         self.balance_features = self.json_params['split']['balance_features']
+        
+        try:
+            self.preproc_params = self.json_params['preproc']
+        except KeyError:
+            self.preproc_params = None            
+        
         
         self.return_estimator =  self.json_params['tuning']['return_estimator']
         self.return_train_score =  self.json_params['tuning']['return_train_score']
@@ -522,7 +650,7 @@ class ClassificationExperiment(object):
         
         return pandas.DataFrame.from_records(imeta_scores)
         
-    def generate_metrics(self, clf, xbt_ds, data_label):
+    def generate_metrics(self, clf, xbt_ds, data_label, split_subset):
         metric_list = []
         for year in range(self.year_range[0],self.year_range[1]):
             xbt_year = xbt_ds.filter_obs({'year': year} )
@@ -551,6 +679,7 @@ class ClassificationExperiment(object):
                            column_template.format(data=data_label, metric='precision', subset='all'): prec_year,
                            column_template.format(data=data_label, metric='recall', subset='all'): recall_year,
                            column_template.format(data=data_label, metric='f1', subset='all'): f1_year,
+                           column_template.format(data=data_label, metric='support', subset='all'): support_year,
                           }
 
             metric_dict.update({column_template.format(data=data_label, metric='precision', subset=cat): val for cat, val in zip(cats, prec_cat)})
@@ -558,9 +687,22 @@ class ClassificationExperiment(object):
             metric_dict.update({column_template.format(data=data_label, metric='f1', subset=cat): val for cat, val in zip(cats, f1_cat)})
             metric_dict.update({column_template.format(data=data_label, metric='support', subset=cat): val for cat, val in zip(cats, support_cat)})
             metric_list += [metric_dict]
-            
         metrics_df = pandas.DataFrame.from_records(metric_list)
-        return metrics_df        
+            
+        X_full = xbt_ds.filter_features(self.input_features).get_ml_dataset()[0]
+        y_full = xbt_ds.filter_features([self.target_feature]).get_ml_dataset()[0]
+        y_res_full = clf.predict(X_full)
+        prec_full, recall_full, f1_full, support_full = sklearn.metrics.precision_recall_fscore_support(
+                y_full, y_res_full, average='micro')
+        metrics_full = {
+            'name': data_label,
+            'subset': split_subset, 
+            'precision_all': prec_full,
+            'recall_all': recall_full,
+            'f1_all': f1_full,
+            'support_all': support_full,
+            }
+        return metrics_df, metrics_full       
     
     def generate_prediction(self, clf, feature_name):
         if self.xbt_predictable is None:
@@ -571,22 +713,28 @@ class ClassificationExperiment(object):
         # generate classification for predictable profiles
         res_ml1 = clf.predict(self.xbt_predictable.filter_features(self.input_features).get_ml_dataset()[0])
         res2 = list(self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_ml1).reshape(-1))        
+        # use known instrument type label for the labelled data, so overwrite the predictions with the known values where we have them
+        self.xbt_predictable.xbt_df.loc[self.xbt_labelled.xbt_df.index, feature_name] = self.xbt_predictable.xbt_df.loc[self.xbt_labelled.xbt_df.index, self.target_feature]
         self.xbt_predictable.xbt_df[feature_name] = res2        
         
         def imeta_instrument(row1):
             return 'XBT: {t1[0]} ({t1[1]})'.format(t1=imeta_classification(row1))        
-        
+
         # checking for missing values and fill in imeta
-        flag_name = 'imeta_applied_{name}'.format(name=feature_name)
-        self.xbt_predictable.xbt_df[flag_name] = 0
-        self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, flag_name] = 1
+        flag_name = OUTPUT_CQ_FLAG.format(var_name=feature_name)
+        self.xbt_predictable.xbt_df[flag_name] = OUTPUT_CQ_ML 
+        self.xbt_predictable.xbt_df.loc[self.xbt_labelled.xbt_df.index, flag_name] = OUTPUT_CQ_INPUT
+        self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, flag_name] = OUTPUT_CQ_IMETA
+        
+        
         self.xbt_predictable.xbt_df[flag_name] = self.xbt_predictable.xbt_df[flag_name].astype('int8')
         self.xbt_predictable.xbt_df.loc[self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].index, feature_name] = \
             self.xbt_predictable.xbt_df[self.xbt_predictable.xbt_df[feature_name].isnull()].apply(imeta_instrument, axis=1)
         
         # merge into full dataset
+        # first, define what to use for missing values when merging
         fv_dict = {feature_name: dataexploration.xbt_dataset.UNKNOWN_STR,
-                   flag_name: 1
+                   flag_name: OUTPUT_CQ_IMETA 
                   }
         self.dataset.merge_features(self.xbt_predictable, [feature_name, flag_name],
                                fill_values = fv_dict,
@@ -595,10 +743,18 @@ class ClassificationExperiment(object):
                                 output_formatters={feature_name: dataexploration.xbt_dataset.cat_output_formatter})        
         
         # fill in imeta for unpredictable values
-        xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.CQ_FLAG: 0})
+        xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.PREDICTABLE_FLAG: 0})
         imeta_instrument_fallback = xbt_unknown_inputs.xbt_df.apply(imeta_instrument, axis=1)
         self.dataset.xbt_df.loc[xbt_unknown_inputs.xbt_df.index, feature_name] = imeta_instrument_fallback
         self.dataset.xbt_df[flag_name] = self.dataset.xbt_df[flag_name].astype('int8')
+        
+        # add WOD code version of output
+        coded_feature_name = feature_name + '_code'
+        try:
+            wod_target_encoder = self._wod_encoders[self.target_feature]
+            self.dataset.xbt_df[coded_feature_name] = self.dataset.xbt_df[feature_name].apply(wod_target_encoder.name_to_code)
+        except KeyError:
+            print(f'No WOD encoder for target feature {self.target_feature}, encoded version of data not produced.')
         
     def generate_vote_probabilities(self, result_feature_names):
         # take a list of estimators
@@ -607,15 +763,124 @@ class ClassificationExperiment(object):
         # generate a one hot style probability of each class based by normalising the vote counts to sum to 1 (divide by num estimators)
         vote_count = numpy.zeros([self.dataset.shape[0], len(self.dataset._feature_encoders[result_feature_names[0]].classes_)],dtype=numpy.float64)
         for res_name in result_feature_names:
-            vote_count += self.dataset.filter_features([res_name]).get_ml_dataset()[0]
+            vote_count += self.dataset.filter_features([res_name]).encode_target()[0]
         vote_count /= float(len(result_feature_names))        
+        
+        res_full_ensemble = vote_count.argmax(axis=1)
+        instr_res_full_ensemble = self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_full_ensemble)        
+        
         vote_dict = {PROB_CAT_TEMPLATE.format(target=self.target_feature,
                                               clf=self.classifier_name,
                                               cat=cat1,
                                              ): vote_count[:,ix1] for ix1, cat1 in enumerate(self.dataset._feature_encoders['instrument'].classes_)}
-        vote_dict.update({'id': self.dataset['id']})
+        vote_dict.update({'id': self.dataset['id'],
+                          MAX_PROB_FEATURE_NAME.format(target=self.target_feature): instr_res_full_ensemble,
+                         })
         vote_df = pandas.DataFrame(vote_dict)        
         self.dataset.xbt_df = self.dataset.xbt_df.merge(vote_df, on='id')
+        
+
+    def _evaluate_vote_probs(self, xbt_ens_working, xbt_ens_unseen, scores):
+        res_ens_working = {'id': xbt_ens_working.xbt_df['id']}
+        res_ens_unseen = {'id': xbt_ens_unseen.xbt_df['id']}
+        vote_count_working = numpy.zeros([xbt_ens_working.shape[0], self.xbt_labelled._feature_encoders[self.target_feature].classes_.shape[0]],dtype=numpy.float64)
+        vote_count_unseen = numpy.zeros([xbt_ens_unseen.shape[0], self.xbt_labelled._feature_encoders[self.target_feature].classes_.shape[0]],dtype=numpy.float64)
+        result_feature_names = []
+        # classifications_df = None
+        for split_num, estimator in enumerate(scores['estimator']):
+            res_name = RESULT_FEATURE_TEMPLATE.format(
+                target=self.target_feature,
+                clf=self.classifier_name,
+                split_num=split_num)
+            result_feature_names += [res_name]
+            res_ml1_working = estimator.predict(xbt_ens_working.filter_features(self.input_features).get_ml_dataset()[0])
+            res2_working = xbt_ens_working._feature_encoders[self.target_feature].inverse_transform(res_ml1_working).reshape(-1,1)
+            res_ens_working[res_name] = res2_working.reshape(-1)
+            vote_count_working += xbt_ens_working._target_encoders[self.target_feature].transform(res2_working)
+    
+            res_ml1_unseen = estimator.predict(xbt_ens_unseen.filter_features(self.input_features).get_ml_dataset()[0])
+            res2_unseen = xbt_ens_unseen._feature_encoders[self.target_feature].inverse_transform(res_ml1_unseen).reshape(-1,1)
+            res_ens_unseen[res_name] = res2_unseen.reshape(-1)
+            vote_count_unseen += xbt_ens_unseen._target_encoders[self.target_feature].transform(res2_unseen)
+    
+        df_ens_working = pandas.DataFrame(res_ens_working)
+        df_ens_unseen = pandas.DataFrame(res_ens_unseen)
+
+        vote_count_working /= float(len(res_ens_working.keys()))    
+        vote_count_unseen /= float(len(res_ens_working.keys()))         
+        
+        max_prob_feature_name = f'{self.target_feature}_max_prob'
+        res_working_ensemble = vote_count_working.argmax(axis=1)
+        instr_res_working_ensemble = self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_working_ensemble)
+        df_ens_working[max_prob_feature_name] = instr_res_working_ensemble
+        res_unseen_ensemble = vote_count_unseen.argmax(axis=1)
+        instr_res_unseen_ensemble = self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(res_unseen_ensemble)
+        df_ens_unseen[max_prob_feature_name] = instr_res_unseen_ensemble
+        
+        df_ens_working = pandas.merge(df_ens_working, xbt_ens_working.xbt_df[['id', 'year']])
+        df_ens_unseen = pandas.merge(df_ens_unseen, xbt_ens_unseen.xbt_df[['id', 'year']])        
+
+        metric_list_ens = []
+        for year in range(self.year_range[0],self.year_range[1]):
+            y_ens_working = xbt_ens_working.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
+            y_ens_unseen = xbt_ens_unseen.filter_obs({'year': year} ).filter_features([self.target_feature]).get_ml_dataset()[0]
+
+            y_res_working = xbt_ens_working._feature_encoders[self.target_feature].transform( df_ens_working[df_ens_working.year == year][max_prob_feature_name])    
+            y_res_unseen = xbt_ens_unseen._feature_encoders[self.target_feature].transform( df_ens_unseen[df_ens_unseen.year == year][max_prob_feature_name])    
+            cats = list(xbt_ens_working._feature_encoders[self.target_feature].classes_)
+            prec_ens_working, recall_ens_working, f1_ens_working, support_ens_working = sklearn.metrics.precision_recall_fscore_support(
+                y_ens_working, y_res_working, average='micro', labels=range(0,len(cats)))
+            prec_ens_unseen, recall_ens_unseen, f1_ens_unseen, support_ens_unseen = sklearn.metrics.precision_recall_fscore_support(
+                y_ens_unseen, y_res_unseen, average='micro', labels=range(0,len(cats)))
+            column_template = '{metric}_{data}_{subset}'
+            metric_dict = {'year': year,
+                       column_template.format(data='ens_working', metric='precision', subset='all'): prec_ens_working,
+                       column_template.format(data='ens_working', metric='recall', subset='all'): recall_ens_working,
+                       column_template.format(data='ens_working', metric='f1', subset='all'): f1_ens_working,
+                       column_template.format(data='ens_working', metric='support', subset='all'):     support_ens_working,
+                       column_template.format(data='ens_unseen', metric='precision', subset='all'): prec_ens_unseen,
+                       column_template.format(data='ens_unseen', metric='recall', subset='all'): recall_ens_unseen,
+                       column_template.format(data='ens_unseen', metric='f1', subset='all'): f1_ens_unseen,
+                       column_template.format(data='ens_unseen', metric='support', subset='all'):     support_ens_unseen,
+                           }
+
+            metric_list_ens += [metric_dict]
+        metrics_df_ens = pandas.DataFrame.from_records(metric_list_ens)            
+        
+        # calculate scores for the ensemble classifier output
+        cats = list(xbt_ens_working._feature_encoders[self.target_feature].classes_)
+        y_ens_working = xbt_ens_working.filter_features([self.target_feature]).get_ml_dataset()[0]
+        y_res_working = xbt_ens_working._feature_encoders[self.target_feature].transform( df_ens_working[max_prob_feature_name])    
+        prec_ens_working, recall_ens_working, f1_ens_working, support_ens_working = sklearn.metrics.precision_recall_fscore_support(
+            y_ens_working, y_res_working, average='micro', labels=range(0,len(cats)))
+
+        column_template = '{metric}_{data}_{subset}'
+        scores_ens_working = {
+            'name': 'ens_working',
+            'subset': 'train',
+            'precision_all': prec_ens_working,
+            'recall_all': recall_ens_working,
+            'f1_all': f1_ens_working,
+            'support_all': support_ens_working,
+        }
+        y_ens_unseen = xbt_ens_unseen.filter_features([self.target_feature]).get_ml_dataset()[0]
+        y_res_unseen = xbt_ens_unseen._feature_encoders[self.target_feature].transform( df_ens_unseen[max_prob_feature_name])    
+        prec_ens_unseen, recall_ens_unseen, f1_ens_unseen, support_ens_unseen = sklearn.metrics.precision_recall_fscore_support(
+            y_ens_unseen, y_res_unseen, average='micro', labels=range(0,len(cats)))
+        scores_ens_unseen = {
+            'name': 'ens_unseen',
+            'subset': 'unseen',
+            'precision_all': prec_ens_unseen,
+            'recall_all': recall_ens_unseen,
+            'f1_all': f1_ens_unseen,
+            'support_all': f1_ens_unseen,
+        }
+            
+        return (df_ens_working,
+                df_ens_unseen,
+                metrics_df_ens,
+                [scores_ens_working, scores_ens_unseen],
+               )
         
     def export_classifiers(self):
         self.classifier_output_fnames = []
