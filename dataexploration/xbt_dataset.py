@@ -660,7 +660,7 @@ class XbtDataset():
         num_no_manufacturer_data = 0
         for cid in cruise_id_list:
             cruise_data = {}
-            cruise_obs = self.filter_obs(KEY_DICT['CRUISE'], cid)
+            cruise_obs = self.filter_obs({KEY_DICT['CRUISE']: cid})
             cruise_data['num_obs'] = cruise_obs.shape[0]
             
             cruise_data['models'] = list(cruise_obs.models)
@@ -749,7 +749,7 @@ class XbtDataset():
     def get_atrributes_per_subset(self, subset, attr):
         values = self.get_property_values(subset)
         return {
-            v1: list(self.filter_obs(subset, v1)[attr].unique())
+            v1: list(self.filter_obs({subset: v1})[attr].unique())
             for v1 in values }
     
 
