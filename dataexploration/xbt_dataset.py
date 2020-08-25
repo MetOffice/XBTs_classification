@@ -196,7 +196,7 @@ def read_csv(fname, features_to_load, converters=None):
 
 def do_concat(df_list, axis=1, ignore_index=True):
     xbt_df = pandas.concat(df_list, ignore_index=ignore_index)
-    for feature1 in CATEGORICAL_FEATURES:
+    for feature1 in (CATEGORICAL_FEATURES + TARGET_LOADED_FEATURES):
         xbt_df[feature1] = xbt_df[feature1].astype('category') 
     for feature1 in ID_FEATURES:
         xbt_df[feature1] = xbt_df[feature1].astype('int') 
