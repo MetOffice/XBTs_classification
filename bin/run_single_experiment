@@ -5,6 +5,14 @@ import pathlib
 import os
 import sys
 root_repo_dir = pathlib.Path(__file__).absolute().parent.parent
+print(f'root repo {root_repo_dir}')
+
+from azureml.core.run import Run
+run = Run.get_context()
+
+import os
+print(os.listdir(root_repo_dir))
+
 sys.path = [str(root_repo_dir)] + sys.path
 
 import warnings

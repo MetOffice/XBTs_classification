@@ -331,13 +331,14 @@ class XbtDataset():
         with 10 values of cruise_number.
         """
         if split_feature is None:
-            df_values = pandas.DataFrame(self.xbt_df[feature].unique(), columns=[feature])
+            df_values = pandas.DataFrame({feature: self.xbt_df[feature].unique()})
             sample_values = list(df_values.sample(frac=fraction)[feature])
         else:
             sample_values = []
             for sfv1 in self.xbt_df[split_feature].unique():
-                df_values = pandas.DataFrame(self.xbt_df[self.xbt_df[split_feature] == sfv1][feature].unique(), 
-                                             columns=[feature])
+                df_values = pandas.DataFrame({
+                    feature: self.xbt_df[self.xbt_df[split_feature] == sfv1][feature].unique() 
+                })
                 sample_values += list(df_values.sample(frac=fraction)[feature])
         return sample_values
         
