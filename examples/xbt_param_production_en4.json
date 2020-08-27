@@ -1,0 +1,29 @@
+{"input_features": ["country", "lat", "lon", "max_depth", "year"],
+ "output_feature":"instrument",
+ "parallel_jobs": -1,
+ "preproc": {
+         "prefix": "ocldb",
+         "suffix": "nc"
+ },
+"split": {
+          "unseen_feature": "cruise_number",
+          "balance_features": ["year", "instrument"],
+          "num_unseen_splits": 5,
+          "num_training_splits": 5
+        },
+ "experiment_name": "decisionTree_countryLatLon",
+ "learner":{"module_name":"sklearn.tree",
+            "python_class":"DecisionTreeClassifier",
+            "name": "DecisionTree"
+           },
+ "tuning":{"param_grid":{"max_depth": [20, 5,10,null], 
+                         "min_samples_leaf": [1,2,5], 
+                         "criterion": ["gini", "entropy"]           
+                        },
+           "scoring":"recall_micro",
+           "n_jobs":1,
+           "return_train_score":true,
+           "return_estimator": true,
+           "cv_metrics": ["recall_micro", "precision_micro", "f1_micro"]
+          }
+}
