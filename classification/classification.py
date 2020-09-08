@@ -5,7 +5,7 @@ import xbt.common
 from classification import experiment
 
 
-def _get_arguments(description):
+def get_arguments(description):
     parser = argparse.ArgumentParser(description=description)
     help_msg = 'The path to the JSON file containing the experiment definition.'
     parser.add_argument('--json-experiment', dest='json_experiment', help=help_msg, required=True)
@@ -41,7 +41,7 @@ def experiment_timer(exp_func):
 def run_single_experiment():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run training, inference and evaluation on a single split.'
     )
     return_code = 0
@@ -63,7 +63,7 @@ def run_single_experiment():
 def run_cv_experiment():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run training, inference and evaluation on multiple splits '
         'using cross-validation.'
     )
@@ -86,7 +86,7 @@ def run_cv_experiment():
 def run_cvhpt_experiment():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run training, inference and evaluation on multiple splits,'
         'with hypterparameter tuning for each split and inner '
         'cross-validation on each set of parameters.'
@@ -110,7 +110,7 @@ def run_cvhpt_experiment():
 def run_inference():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run inference using previously trained classifiersand evaluation on a single split.'
     )
     return_code = 0

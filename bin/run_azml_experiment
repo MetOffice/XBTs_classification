@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+
+# add repository to python path
+import pathlib
+import os
+import sys
+root_repo_dir = pathlib.Path(__file__).absolute().parent.parent
+sys.path = [str(root_repo_dir)] + sys.path
+
+import warnings
+warnings.filterwarnings('ignore')
+
+from classification import xbt_azureml
+
+return_code = xbt_azureml.run_azml_experiment()
+
+sys.exit(return_code)
