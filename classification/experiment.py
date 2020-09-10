@@ -1,6 +1,7 @@
 import argparse
 import ast
 import copy
+import tempfile
 import datetime
 import importlib
 import joblib
@@ -52,18 +53,19 @@ class ClassificationExperiment(object):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
-    def __init__(self, json_descriptor, data_dir, output_dir, output_split, preproc_dir=None):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         # assign arguments
         self.data_dir = data_dir
         self.root_output_dir = output_dir
         self.output_split = output_split
-        self.preproc_dir = preproc_dir
+        self._do_preproc_extract = do_preproc_extract
         self.json_descriptor = json_descriptor
         
         # initialise to None where appropriate
         self.dataset = None
         self.results = None
         self.classifiers = None
+        self._csv_tmp_dir = None
         self._n_jobs = -1
         self._cv_output = None
         self.xbt_predictable = None
@@ -78,7 +80,7 @@ class ClassificationExperiment(object):
         self.primary_keys = ['learner', 'input_features', 'output_feature', 'tuning', 'split', 'experiment_name']
         self.read_json_file()
         
-        if preproc_dir is not None:
+        if self._do_preproc_extract is not None:
             if self.preproc_params is None:
                 raise RuntimeError('preprocessing parameters must be specified in the JSON '
                                    'experiment definition if preprocessing is requested '
@@ -402,24 +404,31 @@ class ClassificationExperiment(object):
         return self.classifiers
     
     
-    def load_dataset(self):
-        """
-        create a XBTDataset
-        only load the specified input and target features, taken from the parameters JSON file
-        """
-        if self.preproc_dir is None:
+    def _construct_dataset_obj(self):
+        if self._do_preproc_extract:
+            self._csv_tmp_dir = tempfile.TemporaryDirectory()
             self.dataset = dataexploration.xbt_dataset.XbtDataset(
-                self.data_dir, 
+                self._csv_tmp_dir, 
                 self.year_range, 
+                nc_dir=self.data_dir,
+                pp_prefix=self.preproc_params['prefix'],
+                pp_suffix=self.preproc_params['suffix'],
             )
         else:
             self.dataset = dataexploration.xbt_dataset.XbtDataset(
                 self.data_dir, 
                 self.year_range, 
-                nc_dir=self.preproc_dir,
-                pp_prefix=self.preproc_params['prefix'],
-                pp_suffix=self.preproc_params['suffix'],
             )
+    
+    def load_dataset(self):
+        """
+        create a XBTDataset
+        only load the specified input and target features, taken from the parameters JSON file
+        """
+        # the actual construction is put into a sperate function, so child 
+        # classes for different platforms can handle any platform specific stuff 
+        self._construct_dataset_obj()
+        
         # get the year range from the data once it has loaded if it was not specified previously
         if self.year_range is None:
             self.year_range = self.dataset.year_range
