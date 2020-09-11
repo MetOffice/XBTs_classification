@@ -1,4 +1,6 @@
 import pathlib
+import argparse
+import os
 
 import azureml.core 
 import azureml.core.run
@@ -82,7 +84,7 @@ class AzureExperiment(classification.experiment.ClassificationExperiment):
             )
     
         
-def get_arguments():
+def get_arguments(description):
     parser = argparse.ArgumentParser(description=description)
     help_msg = 'The path to the JSON file containing the experiment definition.'
     parser.add_argument('--json-experiment', dest='json_experiment', help=help_msg, required=True)
