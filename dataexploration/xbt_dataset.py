@@ -416,6 +416,7 @@ class XbtDataset():
     
     def output_data(self, out_dir, fname_template, exp_name, target_features=[], output_split=xbt.common.OUTPUT_SINGLE):
         out_df = self.xbt_df
+        output_files = []
         for feat1 in target_features:
             try:
                 for formatter1 in self._output_formatters[feat1]:
@@ -433,6 +434,7 @@ class XbtDataset():
                                    )
             print(f'output all predictions to {out_path}')
             out_df.to_csv(out_path)
+            output_files += [out_path]
         elif output_split == xbt.common.OUTPUT_YEARLY:
             print('output predictions by year to {0}'.format(
                 os.path.join(out_dir, fname_template.format(exp_name=exp_name,
@@ -444,6 +446,7 @@ class XbtDataset():
                                                               subset=f'{current_year:04d}')
                                        )
                 out_df[out_df.year == current_year].to_csv(out_path)
+                output_files += [out_path]
         elif output_split == xbt.common.OUTPUT_MONTHLY:
             print('output predictions by month to {0}'.format(
                 os.path.join(out_dir, fname_template.format(exp_name=exp_name,
@@ -455,7 +458,9 @@ class XbtDataset():
                                             fname_template.format(exp_name=exp_name,
                                                                   subset=f'{current_year:04d}{current_month:02d}'))
                     out_df[(out_df.year == current_year) & (out_df.month == current_month)].to_csv(out_path)
-    
+                    output_files += [out_path]
+        return output_files
+
     def merge_features(self, other, features_to_merge, fill_values=None, feature_encoders=None, target_encoders=None, output_formatters=None):
         merged_df = self.xbt_df.merge(other.xbt_df[['id'] + features_to_merge], on='id', how='outer')
         if fill_values:

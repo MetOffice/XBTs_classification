@@ -87,6 +87,10 @@ class ClassificationExperiment(object):
                                    'by specify a directory for files to be preprocessed.')
         
         self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
+        self.metrics_out_path = None
+        self.scores_out_path = None
+        self.predictions_out_path_list = []
+        
         
         
         
@@ -137,12 +141,16 @@ class ClassificationExperiment(object):
         # output results to a file
         if write_results:
             out_name = self.experiment_name + '_' + self._exp_datestamp
-            self.results.to_csv(
-                os.path.join(self.exp_output_dir,
-                             RESULT_FNAME_TEMPLATE.format(name=out_name)))
-            self.score_table.to_csv(
-                os.path.join(self.exp_output_dir,
-                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
+            self.metrics_out_path = os.path.join(self.exp_output_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=out_name))
+            self.results.to_csv(self.metrics_out_path)
+            self.scores_out_path = os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name))
+            self.score_table.to_csv(self.scores_out_path)
+        else:
+            self.metrics_out_path = None
+            self.scores_out_path = None
+
         
         # generate imeta algorithm results for the whole dataset
         duration1 = time.time() - start1
@@ -166,13 +174,15 @@ class ClassificationExperiment(object):
         print(f'{duration1:.3f} seconds since start.')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.dataset.output_data(
+            self.predictions_out_path_list = self.dataset.output_data(
                 self.exp_output_dir,
                 fname_template=OUTPUT_FNAME_TEMPLATE,
                 exp_name=out_name,
                 output_split=self.output_split,
                 target_features=[feature_name],
             )
+        else:
+            self.predictions_out_path_list = []
             
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -276,15 +286,16 @@ class ClassificationExperiment(object):
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
         if write_results:
-            print('output results to a file')
-            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.results.to_csv(
-                os.path.join(self.exp_output_dir,
-                             RESULT_FNAME_TEMPLATE.format(name=out_name)))
-            self.score_table.to_csv(
-                os.path.join(self.exp_output_dir,
-                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
-        
+            out_name = self.experiment_name + '_' + self._exp_datestamp
+            self.metrics_out_path = os.path.join(self.exp_output_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=out_name))
+            self.results.to_csv(self.metrics_out_path)
+            self.scores_out_path = os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name))
+            self.score_table.to_csv(self.scores_out_path)
+        else:
+            self.metrics_out_path = None
+            self.scores_out_path = None
         
         # generate imeta algorithm results for the whole dataset
         imeta_df = self.generate_imeta(self.dataset)
@@ -315,13 +326,15 @@ class ClassificationExperiment(object):
         print('output predictions')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.dataset.output_data(
+            self.predictions_out_path_list = self.dataset.output_data(
                 self.exp_output_dir,
                 fname_template=OUTPUT_FNAME_TEMPLATE,
                 exp_name=out_name,
                 output_split=self.output_split,
                 target_features=[],
             )
+        else:
+            self.predictions_out_path_list = []
                     
         if export_classifiers:
             print('exporting classifier objects through pickle')

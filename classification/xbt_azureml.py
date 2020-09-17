@@ -1,11 +1,13 @@
 import pathlib
 import argparse
 import os
+import tempfile
 
 import azureml.core 
 import azureml.core.run
 import dataexploration.xbt_dataset
 import classification.experiment
+import xbt.common
 
 class AzureDataset(dataexploration.xbt_dataset.XbtDataset):
     def __init__(self, year_range, azml_ws, azml_dataset_name, 
@@ -36,15 +38,22 @@ class AzureDataset(dataexploration.xbt_dataset.XbtDataset):
         
 class AzureExperiment(classification.experiment.ClassificationExperiment):
     
-    def __init__(self, json_descriptor, ds_name, output_dir, output_split, do_preproc_extract=False):
+    def __init__(self, json_descriptor, input_dataset_name, output_datastore_name,  output_datastore_dir, output_split, do_preproc_extract=False):
         self._azml_run = azureml.core.run.Run.get_context()
         self._azml_experiment = self._azml_run.experiment
         self._azml_workspace = self._azml_experiment.workspace
         self._azml_ds_name = ds_name
         
-        if output_dir is None:
-            self._temp_output = tempfile.TemporaryDirectory()
-            output_dir = self._temp_output
+        self._temp_output = tempfile.TemporaryDirectory()
+        output_dir = self._temp_output
+        
+        self._azml_output_datastore_name = output_datastore_name
+        self._output_datastore_dir = output_datastore_dir
+        
+        self._azml_output_datastore = azureml.core.Datastore.get(self._azml_workspace, 
+                                                            self._azml_output_datastore_name)        
+        
+        
         # As far as I can tell, there isn't a good way to find out
         # where AzureML has put the directory passed in as the source_directory
         # argument to the config constructor (e.g. SKLearn), which is passed to the sumbit function,
@@ -56,14 +65,40 @@ class AzureExperiment(classification.experiment.ClassificationExperiment):
         
         #json experiment descriptor path is relative to the source dir
         json_exp_path_full = os.path.join(self._source_dir, json_descriptor)
-               
-        super().__init__(json_exp_path_full, 
-                         None, 
-                         output_dir, 
-                         output_split, 
-                         preproc_dir)
-        
+
+        super().__init__(json_descriptor=json_exp_path_full, 
+                         data_dir=None, 
+                         output_dir=output_dir, 
+                         output_split=output_split, 
+                         do_preproc_extract=do_preproc_extract)
     
+    def _write_exp_outputs_to_azml(self):
+        if self.metrics_out_path:
+            self._azml_output_datastore.upload_files(self.metrics_out_path, 
+                                                    self._output_datastore_dir)
+        if self.scores_out_path:
+            self._azml_output_datastore.upload_files(self.scores_out_path, 
+                                                    self._output_datastore_dir)
+        for path1 in self.predictions_out_path_list:
+            self._azml_output_datastore.upload_files(path1,
+                                                    self._output_datastore_dir)
+    
+    def run_single_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_single_experiment(write_results, write_predictions, export_classifiers)
+        self._write_exp_outputs_to_azml()
+        
+    def run_cv_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_cv_experiment(write_results, write_predictions, export_classifiers)
+        self._write_exp_outputs_to_azml()
+        
+    def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_cvhpt_experiment(write_results, write_predictions=True, export_classifiers)
+        self._write_exp_outputs_to_azml()
+
+    def run_inference(self, write_predictions=True):    
+        super().run_inference(write_predictions)
+        self._write_exp_outputs_to_azml()
+
     def _construct_dataset_obj(self):
         if self._do_preproc_extract:
             self._csv_tmp_dir = tempfile.TemporaryDirectory()
@@ -114,8 +149,6 @@ def run_azml_experiment():
     #TODO: how can we specify that we should do the preprocessing? Maybe a tag in the experimet which specifies whether
     # the azure dataset contain the raw netcdf files or the preprocessed CSV files?
 
-    json_descriptor, ds_name, output_dir, output_split, do_preproc_extract=False
-    
     # we need to figure out how to upload the data to an azure blob. This should probably be done through a datastore object.
     # for now just creating a temp dir to getting it running, eventually the contents should be uploaded to the blob store 
     # in the experiment
