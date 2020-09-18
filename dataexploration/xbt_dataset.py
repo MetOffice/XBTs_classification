@@ -416,6 +416,7 @@ class XbtDataset():
     
     def output_data(self, out_dir, fname_template, exp_name, target_features=[], output_split=xbt.common.OUTPUT_SINGLE):
         out_df = self.xbt_df
+        print(f'output directory: {out_dir}')
         output_files = []
         for feat1 in target_features:
             try:

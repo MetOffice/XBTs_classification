@@ -762,7 +762,7 @@ class ClassificationExperiment(object):
                                fill_values = fv_dict,
                                feature_encoders={feature_name: self.xbt_labelled._feature_encoders[self.target_feature]},
                                target_encoders={feature_name: self.xbt_labelled._target_encoders[self.target_feature]},
-                                output_formatters={feature_name: dataexploration.xbt_dataset.cat_output_formatter})        
+                                output_formatters={feature_name: [dataexploration.xbt_dataset.cat_output_formatter]})        
         
         # fill in imeta for unpredictable values
         xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.PREDICTABLE_FLAG: 0})

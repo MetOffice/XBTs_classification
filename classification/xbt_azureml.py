@@ -42,10 +42,9 @@ class AzureExperiment(classification.experiment.ClassificationExperiment):
         self._azml_run = azureml.core.run.Run.get_context()
         self._azml_experiment = self._azml_run.experiment
         self._azml_workspace = self._azml_experiment.workspace
-        self._azml_ds_name = ds_name
+        self._azml_ds_name = input_dataset_name
         
         self._temp_output = tempfile.TemporaryDirectory()
-        output_dir = self._temp_output
         
         self._azml_output_datastore_name = output_datastore_name
         self._output_datastore_dir = output_datastore_dir
@@ -68,20 +67,27 @@ class AzureExperiment(classification.experiment.ClassificationExperiment):
 
         super().__init__(json_descriptor=json_exp_path_full, 
                          data_dir=None, 
-                         output_dir=output_dir, 
+                         output_dir=str(self._temp_output), 
                          output_split=output_split, 
                          do_preproc_extract=do_preproc_extract)
     
     def _write_exp_outputs_to_azml(self):
+        # upload small files to the run
         if self.metrics_out_path:
-            self._azml_output_datastore.upload_files(self.metrics_out_path, 
-                                                    self._output_datastore_dir)
+            print(f'uploading metrics file {self.metrics_out_path} to AzML run')
+            self._azml_run.upload_file(os.path.split(self.metrics_out_path)[1],
+                                       self.metrics_out_path)
         if self.scores_out_path:
-            self._azml_output_datastore.upload_files(self.scores_out_path, 
-                                                    self._output_datastore_dir)
-        for path1 in self.predictions_out_path_list:
-            self._azml_output_datastore.upload_files(path1,
-                                                    self._output_datastore_dir)
+            print(f'uploading scores file {self.scores_out_path} to AzML run')
+            self._azml_run.upload_file(os.path.split(self.scores_out_path)[1],
+                                       self.scores_out_path)
+            
+        # upload predictions
+        print('uploading predictions to output files:\n' + '\n'.join(self.predictions_out_path_list))
+        self._azml_output_datastore.upload_files(self.predictions_out_path_list,
+                                                 target_path=self._output_datastore_dir,
+                                                 overwrite=True,
+                                                )
     
     def run_single_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         super().run_single_experiment(write_results, write_predictions, export_classifiers)
@@ -92,7 +98,7 @@ class AzureExperiment(classification.experiment.ClassificationExperiment):
         self._write_exp_outputs_to_azml()
         
     def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        super().run_cvhpt_experiment(write_results, write_predictions=True, export_classifiers)
+        super().run_cvhpt_experiment(write_results, write_predictions, export_classifiers)
         self._write_exp_outputs_to_azml()
 
     def run_inference(self, write_predictions=True):    
@@ -139,6 +145,14 @@ def get_arguments(description):
                         choices=xbt.common.OUTPUT_FREQS,
                         default = xbt.common.OUTPUT_SINGLE,
                        )
+    help_msg = 'Name of the datastore to write the outputs to.'
+    parser.add_argument('--output-datastore-name',
+                       dest='output_datastore_name',
+                       help=help_msg)
+    help_msg = 'Location in the datastore to write the outputs to.'
+    parser.add_argument('--output-datastore-dir',
+                       dest='output_datastore_dir',
+                       help=help_msg)
     return parser.parse_args()
 
 def run_azml_experiment():
@@ -154,8 +168,9 @@ def run_azml_experiment():
     # in the experiment
     with tempfile.TemporaryDirectory() as output_dir:
         xbt_exp = AzureExperiment(json_descriptor=exp_args.json_experiment, 
-                                  ds_name=exp_args.input_dataset_name, 
-                                  output_dir=output_dir,
+                                  input_dataset_name=exp_args.input_dataset_name, 
+                                  output_datastore_name=exp_args.output_datastore_name,
+                                  output_datastore_dir=exp_args.output_datastore_dir,
                                   do_preproc_extract=exp_args.do_preproc_extract,
                                   output_split=exp_args.output_file_split,
                                  )
