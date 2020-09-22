@@ -462,6 +462,7 @@ class ClassificationExperiment(object):
     def read_json_file(self):
         """Open json descriptor file, load its content into a dictionary"""
         
+        print(f'reading JSON experiment definition from {self.json_descriptor}')
         if not os.path.isfile(self.json_descriptor):
             raise ValueError(f'Missing json descriptor {self.json_descriptor}!')
         if not os.path.isabs(self.json_descriptor):
@@ -906,6 +907,7 @@ class ClassificationExperiment(object):
         
     def export_classifiers(self):
         self.classifier_output_fnames = []
+        self.classifiers_export_path_list = []
         for split_num, clf1 in self.classifiers.items():
             export_fname = CLASSIFIER_EXPORT_FNAME_TEMPLATE.format(
                 split_num=split_num,
@@ -915,6 +917,7 @@ class ClassificationExperiment(object):
             export_path = os.path.join(self.exp_output_dir,
                                        export_fname)
             joblib.dump(clf1, export_path)
+            self.classifiers_export_path_list += [export_path]
         out_dict = dict(self.json_params)
         out_dict['experiment_name'] = out_dict['experiment_name'] + '_inference'
         out_dict['classifier_fnames'] = self.classifier_output_fnames
