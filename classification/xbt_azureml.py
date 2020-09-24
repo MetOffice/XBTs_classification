@@ -57,18 +57,23 @@ class AzureExperiment(classification.experiment.ClassificationExperiment):
     
     def _write_exp_outputs_to_azml(self):
         # upload small files to the run
-        if self.metrics_out_path:
-            self._azml_run.log_table('metrics',
-                                     to_azure_table(self.results)
-            print(f'uploading metrics file {self.metrics_out_path} to AzML run')
-            self._azml_run.upload_file(os.path.split(self.metrics_out_path)[1],
-                                       self.metrics_out_path)
         if self.scores_out_path:
             self._azml_run.log_table('scores',
-                                     to_azure_table(self.score_table)
+                                     {c1: list(self.score_table[c1]) for c1 in self.score_table.columns})
             print(f'uploading scores file {self.scores_out_path} to AzML run')
             self._azml_run.upload_file(os.path.split(self.scores_out_path)[1],
                                        self.scores_out_path)
+        
+        if self.metrics_out_path:
+            print(f'uploading metrics file {self.metrics_out_path} to AzML run')
+            self._azml_run.upload_file(os.path.split(self.metrics_out_path)[1],
+                                       self.metrics_out_path)
+            # only upload metrics for all classes, too much data otherwise for AzML
+            metric_list = [c1 for c1 in self.results.columns if '_all' in c1]
+#             for metric_name in metric_list:
+#                 self._azml_run.log_table(f'metric_{metric_name}', {
+#                     'year': list(self.results['year']),
+#                     metric_name: list(self.results[metric_name])})
             
         for model_path1 in self.classifiers_export_path_list:
             model_upload_name = model_name=os.path.split(model_path1)[1]
