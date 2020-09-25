@@ -2,7 +2,6 @@
 
 # add repository to python path
 import pathlib
-import os
 import sys
 root_repo_dir = pathlib.Path(__file__).absolute().parent.parent
 sys.path = [str(root_repo_dir)] + sys.path
@@ -10,8 +9,8 @@ sys.path = [str(root_repo_dir)] + sys.path
 import warnings
 warnings.filterwarnings('ignore')
 
-import preprocessing.extract_year
+import xbt.extract_year
 
-return_code = preprocessing.extract_year.wod_extract()
+return_code = xbt.extract_year.wod_extract()
 
 sys.exit(return_code)

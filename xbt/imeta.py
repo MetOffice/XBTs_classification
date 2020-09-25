@@ -11,7 +11,7 @@ import pandas
 import sklearn.metrics
 
 import xbt.common
-import dataexploration.xbt_dataset
+import xbt.xbt_dataset
 
 def get_depth_category(depth_list, depth_value):
     previous = 0.0
@@ -95,11 +95,11 @@ def generate_imeta():
         date_range = None
     else:
         date_range = (user_args.start_year, user_args.end_year)
-    xbt_full = dataexploration.xbt_dataset.XbtDataset(user_args.input_path, 
-                                                      date_range )
+    xbt_full = xbt.xbt_dataset.XbtDataset(user_args.input_path,
+                                          date_range)
     # generate encoders for getting ML formatted data
     _ = xbt_full.get_ml_dataset(return_data=False)
-    _ = xbt_full.filter_features(dataexploration.xbt_dataset.TARGET_FEATURES).encode_target(return_data=False)    
+    _ = xbt_full.filter_features(xbt.xbt_dataset.TARGET_FEATURES).encode_target(return_data=False)
     
     print(f'running imeta algorithm on dataset (elapsed {time.time()-start_time} seconds)')
     imeta_classes = xbt_full.xbt_df.apply(imeta_classification, axis=1)                                                      
@@ -138,7 +138,7 @@ def generate_imeta():
                                             f'xbt_classifications_imeta.csv',
                                            )
     print(f'writing classifications to file {classifications_out_path} (elapsed {time.time()-start_time} seconds)')
-    xbt_full.filter_features(dataexploration.xbt_dataset.ID_FEATURES + [imeta_feature]).output_data(
+    xbt_full.filter_features(xbt.xbt_dataset.ID_FEATURES + [imeta_feature]).output_data(
         classifications_out_path, )
     print('imeta generation complete. (elapsed {time.time()-start_time} seconds)')
     

@@ -1,8 +1,5 @@
-import argparse
 import ast
-import copy
 import tempfile
-import datetime
 import importlib
 import joblib
 import json
@@ -12,15 +9,12 @@ import pandas
 import time
 import sklearn.metrics
 
-
-from preprocessing.data_preprocessing import  DataPreprocessor
 pandas.options.mode.chained_assignment = None
 
 import xbt.common
-import dataexploration.wod
-import dataexploration.xbt_dataset
-from classification.imeta import imeta_classification, XBT_MAX_DEPTH
-
+import xbt.wod
+import xbt.xbt_dataset
+from xbt.imeta import imeta_classification
 
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
 SCORE_FNAME_TEMPLATE = 'xbt_score_{name}.csv'
@@ -73,7 +67,7 @@ class ClassificationExperiment(object):
         self.classifier_fnames = None
         self.experiment_description_dir = None
         self.score_table = None
-        self._wod_encoders = {k1: enc_class1() for k1, enc_class1 in dataexploration.wod.get_wod_encoders().items()}
+        self._wod_encoders = {k1: enc_class1() for k1, enc_class1 in xbt.wod.get_wod_encoders().items()}
         
         self.ens_unseen_fraction = 0.1        
         # load experiment definition from json file
@@ -420,7 +414,7 @@ class ClassificationExperiment(object):
     def _construct_dataset_obj(self):
         if self._do_preproc_extract:
             self._csv_tmp_dir = tempfile.TemporaryDirectory()
-            self.dataset = dataexploration.xbt_dataset.XbtDataset(
+            self.dataset = xbt.xbt_dataset.XbtDataset(
                 self._csv_tmp_dir, 
                 self.year_range, 
                 nc_dir=self.data_dir,
@@ -428,7 +422,7 @@ class ClassificationExperiment(object):
                 pp_suffix=self.preproc_params['suffix'],
             )
         else:
-            self.dataset = dataexploration.xbt_dataset.XbtDataset(
+            self.dataset = xbt.xbt_dataset.XbtDataset(
                 self.data_dir, 
                 self.year_range, 
             )
@@ -450,7 +444,7 @@ class ClassificationExperiment(object):
         
         # initialise the feature encoders on the labelled data
         _ = self.xbt_labelled.get_ml_dataset(return_data=False)
-        _ = self.xbt_labelled.filter_features(dataexploration.xbt_dataset.TARGET_FEATURES).encode_target(return_data=False)
+        _ = self.xbt_labelled.filter_features(xbt.xbt_dataset.TARGET_FEATURES).encode_target(return_data=False)
 
     def _check_output_dir(self):
         if not self.exp_output_dir:
@@ -756,17 +750,17 @@ class ClassificationExperiment(object):
         
         # merge into full dataset
         # first, define what to use for missing values when merging
-        fv_dict = {feature_name: dataexploration.xbt_dataset.UNKNOWN_STR,
+        fv_dict = {feature_name: xbt.xbt_dataset.UNKNOWN_STR,
                    flag_name: OUTPUT_CQ_IMETA 
                   }
         self.dataset.merge_features(self.xbt_predictable, [feature_name, flag_name],
-                               fill_values = fv_dict,
-                               feature_encoders={feature_name: self.xbt_labelled._feature_encoders[self.target_feature]},
-                               target_encoders={feature_name: self.xbt_labelled._target_encoders[self.target_feature]},
-                                output_formatters={feature_name: [dataexploration.xbt_dataset.cat_output_formatter]})        
+                                    fill_values = fv_dict,
+                                    feature_encoders={feature_name: self.xbt_labelled._feature_encoders[self.target_feature]},
+                                    target_encoders={feature_name: self.xbt_labelled._target_encoders[self.target_feature]},
+                                    output_formatters={feature_name: [xbt.xbt_dataset.cat_output_formatter]})
         
         # fill in imeta for unpredictable values
-        xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.PREDICTABLE_FLAG: 0})
+        xbt_unknown_inputs = self.dataset.filter_obs({xbt.xbt_dataset.PREDICTABLE_FLAG: 0})
         imeta_instrument_fallback = xbt_unknown_inputs.xbt_df.apply(imeta_instrument, axis=1)
         self.dataset.xbt_df.loc[xbt_unknown_inputs.xbt_df.index, feature_name] = imeta_instrument_fallback
         self.dataset.xbt_df[flag_name] = self.dataset.xbt_df[flag_name].astype('int8')

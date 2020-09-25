@@ -4,7 +4,7 @@ import pathlib
 import pandas
 
 class WODInstrumentCodes():
-    WOD_INSTRUMENT_CODES_FILENAME = 'v_5_instrument.csv'
+    WOD_INSTRUMENT_CODES_FILENAME = '../resources/v_5_instrument.csv'
     XBT_PREFIX = 'XBT'
     def __init__(self):
         code_file_dir = pathlib.Path(__file__).absolute().parent

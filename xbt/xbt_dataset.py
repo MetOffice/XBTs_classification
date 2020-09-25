@@ -2,13 +2,12 @@ import os
 import re
 import pandas
 import functools
-import datetime
 import dask.dataframe
 import numpy
 import tempfile
 import sklearn.preprocessing
 
-import preprocessing.extract_year
+import xbt.extract_year
 import xbt.common
 XBT_FNAME_TEMPLATE = 'xbt_{year}.csv'
 XBT_CSV_REGEX_STR = 'xbt_(?P<year>[0-9]+).csv'
@@ -260,7 +259,7 @@ class XbtDataset():
         if self._do_preproc_extract:
             #create a temp subdirectory to be used in the preprocessing, which will then be deleted after preprocessing.
             with tempfile.TemporaryDirectory(dir=self.directory) as temp_dir:
-                preprocessing.extract_year.do_wod_extract(
+                xbt.extract_year.do_wod_extract(
                     nc_dir=self.directory, 
                     out_dir=self._pp_csv_dir, 
                     temp_dir=temp_dir,
@@ -268,7 +267,7 @@ class XbtDataset():
                     end_year=end_year, 
                     fname_prefix=self.pp_prefix, 
                     fname_suffix=self.pp_suffix, 
-                    pool_size=preprocessing.extract_year.DEFAULT_PREPROC_TASKS,                
+                    pool_size=xbt.extract_year.DEFAULT_PREPROC_TASKS,
                 )
                 load_dir = self._pp_csv_dir
         else:

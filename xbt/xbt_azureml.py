@@ -1,15 +1,14 @@
-import pathlib
 import argparse
 import os
 import tempfile
 
 import azureml.core 
 import azureml.core.run
-import dataexploration.xbt_dataset
-import classification.experiment
+import xbt.xbt_dataset
+import xbt.experiment
 import xbt.common
 
-class AzureDataset(dataexploration.xbt_dataset.XbtDataset):
+class AzureDataset(xbt.xbt_dataset.XbtDataset):
     def __init__(self, year_range, azml_ws, azml_dataset_name, 
                  df=None, use_dask=False, load_profiles=False, load_quality_flags=False, do_preproc_extract=False, pp_prefix='', pp_suffix='', pp_csv_dir=None):
         
@@ -38,7 +37,7 @@ class AzureDataset(dataexploration.xbt_dataset.XbtDataset):
 def to_azure_table(input_dict):
     return [dict(zip(['index'] + list(input_dict), record1)) for record1 in input_dict.to_records()]
     
-class AzureExperiment(classification.experiment.ClassificationExperiment):
+class AzureExperiment(xbt.experiment.ClassificationExperiment):
     
     def __init__(self, json_descriptor,data_dir, output_dir, output_split, do_preproc_extract=False):
         self._azml_run = azureml.core.run.Run.get_context()

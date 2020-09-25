@@ -2,7 +2,6 @@
 
 # add repository to python path
 import pathlib
-import os
 import sys
 root_repo_dir = pathlib.Path(__file__).absolute().parent.parent
 print(f'root repo {root_repo_dir}')
@@ -18,7 +17,7 @@ sys.path = [str(root_repo_dir)] + sys.path
 import warnings
 warnings.filterwarnings('ignore')
 
-from classification import classification
+from xbt import classification
 
 return_code = classification.run_single_experiment()
 
