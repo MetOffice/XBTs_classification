@@ -1,6 +1,7 @@
 import argparse
 import ast
 import copy
+import tempfile
 import datetime
 import importlib
 import joblib
@@ -52,18 +53,19 @@ class ClassificationExperiment(object):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and delivering outut prediction
     """
-    def __init__(self, json_descriptor, data_dir, output_dir, output_split, preproc_dir=None):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         # assign arguments
         self.data_dir = data_dir
         self.root_output_dir = output_dir
         self.output_split = output_split
-        self.preproc_dir = preproc_dir
+        self._do_preproc_extract = do_preproc_extract
         self.json_descriptor = json_descriptor
         
         # initialise to None where appropriate
         self.dataset = None
         self.results = None
         self.classifiers = None
+        self._csv_tmp_dir = None
         self._n_jobs = -1
         self._cv_output = None
         self.xbt_predictable = None
@@ -78,13 +80,17 @@ class ClassificationExperiment(object):
         self.primary_keys = ['learner', 'input_features', 'output_feature', 'tuning', 'split', 'experiment_name']
         self.read_json_file()
         
-        if preproc_dir is not None:
+        if self._do_preproc_extract is not None:
             if self.preproc_params is None:
                 raise RuntimeError('preprocessing parameters must be specified in the JSON '
                                    'experiment definition if preprocessing is requested '
                                    'by specify a directory for files to be preprocessed.')
         
         self.exp_output_dir = os.path.join(self.root_output_dir, self.experiment_name)
+        self.metrics_out_path = None
+        self.scores_out_path = None
+        self.predictions_out_path_list = []
+        
         
         
         
@@ -135,12 +141,16 @@ class ClassificationExperiment(object):
         # output results to a file
         if write_results:
             out_name = self.experiment_name + '_' + self._exp_datestamp
-            self.results.to_csv(
-                os.path.join(self.exp_output_dir,
-                             RESULT_FNAME_TEMPLATE.format(name=out_name)))
-            self.score_table.to_csv(
-                os.path.join(self.exp_output_dir,
-                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
+            self.metrics_out_path = os.path.join(self.exp_output_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=out_name))
+            self.results.to_csv(self.metrics_out_path)
+            self.scores_out_path = os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name))
+            self.score_table.to_csv(self.scores_out_path)
+        else:
+            self.metrics_out_path = None
+            self.scores_out_path = None
+
         
         # generate imeta algorithm results for the whole dataset
         duration1 = time.time() - start1
@@ -164,13 +174,15 @@ class ClassificationExperiment(object):
         print(f'{duration1:.3f} seconds since start.')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.dataset.output_data(
+            self.predictions_out_path_list = self.dataset.output_data(
                 self.exp_output_dir,
                 fname_template=OUTPUT_FNAME_TEMPLATE,
                 exp_name=out_name,
                 output_split=self.output_split,
                 target_features=[feature_name],
             )
+        else:
+            self.predictions_out_path_list = []
             
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -274,15 +286,16 @@ class ClassificationExperiment(object):
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
         if write_results:
-            print('output results to a file')
-            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.results.to_csv(
-                os.path.join(self.exp_output_dir,
-                             RESULT_FNAME_TEMPLATE.format(name=out_name)))
-            self.score_table.to_csv(
-                os.path.join(self.exp_output_dir,
-                             SCORE_FNAME_TEMPLATE.format(name=out_name)))
-        
+            out_name = self.experiment_name + '_' + self._exp_datestamp
+            self.metrics_out_path = os.path.join(self.exp_output_dir,
+                             RESULT_FNAME_TEMPLATE.format(name=out_name))
+            self.results.to_csv(self.metrics_out_path)
+            self.scores_out_path = os.path.join(self.exp_output_dir,
+                             SCORE_FNAME_TEMPLATE.format(name=out_name))
+            self.score_table.to_csv(self.scores_out_path)
+        else:
+            self.metrics_out_path = None
+            self.scores_out_path = None
         
         # generate imeta algorithm results for the whole dataset
         imeta_df = self.generate_imeta(self.dataset)
@@ -313,13 +326,15 @@ class ClassificationExperiment(object):
         print('output predictions')
         if write_predictions:
             out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.dataset.output_data(
+            self.predictions_out_path_list = self.dataset.output_data(
                 self.exp_output_dir,
                 fname_template=OUTPUT_FNAME_TEMPLATE,
                 exp_name=out_name,
                 output_split=self.output_split,
                 target_features=[],
             )
+        else:
+            self.predictions_out_path_list = []
                     
         if export_classifiers:
             print('exporting classifier objects through pickle')
@@ -402,24 +417,31 @@ class ClassificationExperiment(object):
         return self.classifiers
     
     
-    def load_dataset(self):
-        """
-        create a XBTDataset
-        only load the specified input and target features, taken from the parameters JSON file
-        """
-        if self.preproc_dir is None:
+    def _construct_dataset_obj(self):
+        if self._do_preproc_extract:
+            self._csv_tmp_dir = tempfile.TemporaryDirectory()
             self.dataset = dataexploration.xbt_dataset.XbtDataset(
-                self.data_dir, 
+                self._csv_tmp_dir, 
                 self.year_range, 
+                nc_dir=self.data_dir,
+                pp_prefix=self.preproc_params['prefix'],
+                pp_suffix=self.preproc_params['suffix'],
             )
         else:
             self.dataset = dataexploration.xbt_dataset.XbtDataset(
                 self.data_dir, 
                 self.year_range, 
-                nc_dir=self.preproc_dir,
-                pp_prefix=self.preproc_params['prefix'],
-                pp_suffix=self.preproc_params['suffix'],
             )
+    
+    def load_dataset(self):
+        """
+        create a XBTDataset
+        only load the specified input and target features, taken from the parameters JSON file
+        """
+        # the actual construction is put into a sperate function, so child 
+        # classes for different platforms can handle any platform specific stuff 
+        self._construct_dataset_obj()
+        
         # get the year range from the data once it has loaded if it was not specified previously
         if self.year_range is None:
             self.year_range = self.dataset.year_range
@@ -440,6 +462,7 @@ class ClassificationExperiment(object):
     def read_json_file(self):
         """Open json descriptor file, load its content into a dictionary"""
         
+        print(f'reading JSON experiment definition from {self.json_descriptor}')
         if not os.path.isfile(self.json_descriptor):
             raise ValueError(f'Missing json descriptor {self.json_descriptor}!')
         if not os.path.isabs(self.json_descriptor):
@@ -740,7 +763,7 @@ class ClassificationExperiment(object):
                                fill_values = fv_dict,
                                feature_encoders={feature_name: self.xbt_labelled._feature_encoders[self.target_feature]},
                                target_encoders={feature_name: self.xbt_labelled._target_encoders[self.target_feature]},
-                                output_formatters={feature_name: dataexploration.xbt_dataset.cat_output_formatter})        
+                                output_formatters={feature_name: [dataexploration.xbt_dataset.cat_output_formatter]})        
         
         # fill in imeta for unpredictable values
         xbt_unknown_inputs = self.dataset.filter_obs({dataexploration.xbt_dataset.PREDICTABLE_FLAG: 0})
@@ -884,6 +907,7 @@ class ClassificationExperiment(object):
         
     def export_classifiers(self):
         self.classifier_output_fnames = []
+        self.classifiers_export_path_list = []
         for split_num, clf1 in self.classifiers.items():
             export_fname = CLASSIFIER_EXPORT_FNAME_TEMPLATE.format(
                 split_num=split_num,
@@ -893,6 +917,7 @@ class ClassificationExperiment(object):
             export_path = os.path.join(self.exp_output_dir,
                                        export_fname)
             joblib.dump(clf1, export_path)
+            self.classifiers_export_path_list += [export_path]
         out_dict = dict(self.json_params)
         out_dict['experiment_name'] = out_dict['experiment_name'] + '_inference'
         out_dict['classifier_fnames'] = self.classifier_output_fnames
@@ -900,3 +925,8 @@ class ClassificationExperiment(object):
         print(f' writing inference experiment output file to {self.inference_out_json_path}')
         with open(self.inference_out_json_path, 'w') as json_out_file:
             json.dump(out_dict, json_out_file)
+
+               
+
+    
+    

@@ -5,7 +5,9 @@ import xbt.common
 from classification import experiment
 
 
-def _get_arguments(description):
+
+
+def get_arguments(description):
     parser = argparse.ArgumentParser(description=description)
     help_msg = 'The path to the JSON file containing the experiment definition.'
     parser.add_argument('--json-experiment', dest='json_experiment', help=help_msg, required=True)
@@ -14,8 +16,9 @@ def _get_arguments(description):
                 'input files will be created by the preprocessing step and '
                 'written to this location.')
     parser.add_argument('--input-path', dest='input_path', help=help_msg, required=True)
-    help_msg = 'The path to the directory containing files to be preprocessed, typically netCDF files from WOD or similar source.'
-    parser.add_argument('--preproc-path', dest='preproc_path', help=help_msg, default=None)
+    help_msg = 'If true, the data in the input directory is expected to be in raw netcdf format, and the ' \
+               'preprocessing step to extract the data into CSV files will be run.'
+    parser.add_argument('--do-preproc-extract', dest='do_preproc_extract', help=help_msg, action='store_true')
     help_msg = 'The path to the directory for experimenting output. A subdirectory will be created using the experiment name.'
     parser.add_argument('--output-path', dest='output_path', help=help_msg, required=True)
     help_msg = 'Specify whether classification output should be in a single file, or split by year or month.'
@@ -41,16 +44,16 @@ def experiment_timer(exp_func):
 def run_single_experiment():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run training, inference and evaluation on a single split.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment, 
-                                                         exp_args.input_path, 
-                                                         exp_args.output_path,
-                                                  preproc_dir=exp_args.preproc_path,
+    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
+                                                  exp_args.input_path,
+                                                  exp_args.output_path,
                                                   output_split=exp_args.output_file_split,
-                                                 )
+                                                  do_preproc_extract=exp_args.do_preproc_extract,
+                                                  )
     try:
         xbt_exp.run_single_experiment()
     except RuntimeError as e1:
@@ -63,17 +66,17 @@ def run_single_experiment():
 def run_cv_experiment():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run training, inference and evaluation on multiple splits '
         'using cross-validation.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment, 
-                                                         exp_args.input_path, 
-                                                         exp_args.output_path,
-                                                  preproc_dir=exp_args.preproc_path,
+    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
+                                                  exp_args.input_path,
+                                                  exp_args.output_path,
                                                   output_split=exp_args.output_file_split,
-                                                 )
+                                                  do_preproc_extract=exp_args.do_preproc_extract,
+                                                  )
     try:
         xbt_exp.run_cv_experiment()
     except RuntimeError as e1:
@@ -86,18 +89,19 @@ def run_cv_experiment():
 def run_cvhpt_experiment():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run training, inference and evaluation on multiple splits,'
         'with hypterparameter tuning for each split and inner '
         'cross-validation on each set of parameters.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment, 
-                                                         exp_args.input_path, 
-                                                         exp_args.output_path,
-                                                  preproc_dir=exp_args.preproc_path,
+    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
+                                                  exp_args.input_path,
+                                                  exp_args.output_path,
                                                   output_split=exp_args.output_file_split,
-                                                 )
+                                                  do_preproc_extract=exp_args.do_preproc_extract,
+                                                  )
+
     try:
         xbt_exp.run_cvhpt_experiment()
     except RuntimeError as e1:
@@ -110,16 +114,17 @@ def run_cvhpt_experiment():
 def run_inference():
     """
     """
-    exp_args = _get_arguments(
+    exp_args = get_arguments(
         'Run inference using previously trained classifiersand evaluation on a single split.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment, 
-                                                  exp_args.input_path, 
+    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
+                                                  exp_args.input_path,
                                                   exp_args.output_path,
-                                                  preproc_dir=exp_args.preproc_path,
                                                   output_split=exp_args.output_file_split,
-                                                 )
+                                                  do_preproc_extract=exp_args.do_preproc_extract,
+                                                  )
+
     try:
         xbt_exp.run_inference()
     except RuntimeError as e1:
