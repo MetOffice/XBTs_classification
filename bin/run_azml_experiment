@@ -9,8 +9,8 @@ sys.path = [str(root_repo_dir)] + sys.path
 import warnings
 warnings.filterwarnings('ignore')
 
-from xbt import xbt_azureml
+from xbt import azureml
 
-return_code = xbt_azureml.run_azml_experiment()
+return_code = azureml.run_azml_experiment()
 
 sys.exit(return_code)

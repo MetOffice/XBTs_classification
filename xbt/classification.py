@@ -19,24 +19,27 @@ def get_arguments(description):
     help_msg = 'The path to the directory for experimenting output. A subdirectory will be created using the experiment name.'
     parser.add_argument('--output-path', dest='output_path', help=help_msg, required=True)
     help_msg = 'Specify whether classification output should be in a single file, or split by year or month.'
-    parser.add_argument('--output-file-split', 
-                        dest='output_file_split', 
-                        help=help_msg, 
+    parser.add_argument('--output-file-split',
+                        dest='output_file_split',
+                        help=help_msg,
                         choices=xbt.common.OUTPUT_FREQS,
-                        default = xbt.common.OUTPUT_SINGLE,
-                       )
+                        default=xbt.common.OUTPUT_SINGLE,
+                        )
     return parser.parse_args()
+
 
 def experiment_timer(exp_func):
     def run_experiment():
         start1 = time.time()
         ret_code = exp_func()
         end1 = time.time()
-        duration1 = end1-start1
+        duration1 = end1 - start1
         print(f'experiment duration: {duration1:.3f} seconds')
         return ret_code
+
     return run_experiment
-        
+
+
 @experiment_timer
 def run_single_experiment():
     """
@@ -79,8 +82,9 @@ def run_cv_experiment():
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
-    
+
     return return_code
+
 
 @experiment_timer
 def run_cvhpt_experiment():
@@ -104,8 +108,9 @@ def run_cvhpt_experiment():
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
-    
+
     return return_code
+
 
 @experiment_timer
 def run_inference():
@@ -127,6 +132,5 @@ def run_inference():
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
-    
+
     return return_code
-    
