@@ -1,8 +1,0 @@
-#!/bin/bash
-# Author: Francesco Capponi
-# mail: francesco.capponi@metoffice.gov.uk
-# date: 23/02/2018
-# Base script for plotting the results
-
-python2.7 -m classification.plot_results ${RESULTS_SOURCEDIR}
-
