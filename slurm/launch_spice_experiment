@@ -6,7 +6,7 @@ export XBT_REPO_ROOT=$3
 export XBT_JSON_EXP=$4
 echo Launching experiment from file ${XBT_JSON_EXP}
 export XBT_INPUT_PATH=${XBT_INPUT_PATH:-${SCRATCH}/xbt-data/csv_with_imeta/}
-export XBT_OUTPUT_PATH=${XBT_OUTPUT_PATH:-${SCRATCH}/xbt-data/experiment_outputs}
+export XBT_OUTPUT_PATH=${XBT_OUTPUT_PATH:-${SCRATCH}/xbt-data/refactor_outputs_202010}
 
 export DATESTAMP=$(date '+%Y%m%d_%H%M%S')
 export MEM_ALLOC=32G
@@ -18,7 +18,7 @@ echo stdout log written to ${OUTPATH}
 echo stderr log written to ${ERRPATH}
 export JOB_TIME=${JOB_TIME:-360}
 export JOB_NAME=xbt_job_${XBT_EXP_NAME}
-export XBT_QUEUE=${XBT_QUEUE:normal}
+export XBT_QUEUE=${XBT_QUEUE:-normal}
 
 echo $PWD
 echo running experiment from JSON file ${XBT_JSON_EXP}
