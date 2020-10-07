@@ -7,6 +7,8 @@ import numpy
 import os
 import pandas
 import time
+import abc
+
 import sklearn.metrics
 
 pandas.options.mode.chained_assignment = None
@@ -45,7 +47,7 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-class ClassificationExperiment(object):
+class ClassificationExperiment(abc.ABC):
     """
     Class designed for implementing features engineering, design of the input space, algorithms fine tuning and
     delivering outut prediction
@@ -89,331 +91,9 @@ class ClassificationExperiment(object):
         self.scores_out_path = None
         self.predictions_out_path_list = []
 
-    def run_single_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        """
-        """
-        self._check_output_dir()
-        self._exp_datestamp = xbt.common.generate_datestamp()
-
-        start1 = time.time()
-        print('loading dataset')
-        self.load_dataset()
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('generating splits')
-        X_dict, y_dict, df_dict = self.get_train_test_unseen_sets()
-
-        # fit classifier
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('training classifier')
-        clf1 = self.train_classifier(X_dict['train'], y_dict['train'])
-
-        # generate scores
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('generating metrics')
-        metrics_train, score_train = self.generate_metrics(clf1, df_dict['train'], 'train', 'train')
-        metrics_test, score_test = self.generate_metrics(clf1, df_dict['test'], 'test', 'test')
-        exp_results = pandas.merge(metrics_train, metrics_test, on='year')
-        metrics_unseen, score_unseen = self.generate_metrics(clf1, df_dict['unseen'], 'unseen', 'unseen')
-        exp_results = exp_results.merge(metrics_unseen, on='year')
-
-        self.score_table = pandas.DataFrame.from_records([score_train, score_test, score_unseen])
-
-        # generate imeta
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('generating imeta output')
-        exp_results = exp_results.merge(self.score_imeta(df_dict['train'], 'train'), on='year')
-        exp_results = exp_results.merge(self.score_imeta(df_dict['test'], 'est'), on='year')
-        exp_results = exp_results.merge(self.score_imeta(df_dict['unseen'], 'unseen'), on='year')
-
-        self.results = exp_results
-        self.classifiers = {0: clf1}
-
-        # output results to a file
-        if write_results:
-            out_name = self.experiment_name + '_' + self._exp_datestamp
-            self.metrics_out_path = os.path.join(self.exp_output_dir,
-                                                 RESULT_FNAME_TEMPLATE.format(name=out_name))
-            self.results.to_csv(self.metrics_out_path)
-            self.scores_out_path = os.path.join(self.exp_output_dir,
-                                                SCORE_FNAME_TEMPLATE.format(name=out_name))
-            self.score_table.to_csv(self.scores_out_path)
-        else:
-            self.metrics_out_path = None
-            self.scores_out_path = None
-
-        # generate imeta algorithm results for the whole dataset
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('generating predictions for the whole dataset.')
-        imeta_df = self.generate_imeta(self.dataset)
-        imeta_df = imeta_df.rename(
-            columns={'instrument': 'imeta_instrument',
-                     'model': 'imeta_model',
-                     'manufacturer': 'imeta_manufacturer',
-                     })
-        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
-
-        # run prediction on full dataset
-        feature_name = '{target}_res_{name}'.format(target=self.target_feature,
-                                                    name=self.classifier_name,
-                                                    )
-        self.generate_prediction(self.classifiers[0], feature_name)
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        if write_predictions:
-            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.predictions_out_path_list = self.dataset.output_data(
-                self.exp_output_dir,
-                fname_template=OUTPUT_FNAME_TEMPLATE,
-                exp_name=out_name,
-                output_split=self.output_split,
-                target_features=[feature_name],
-            )
-        else:
-            self.predictions_out_path_list = []
-
-        if export_classifiers:
-            print('exporting classifier objects through pickle')
-            self.export_classifiers()
-
-        return (self.results, self.classifiers)
-
-    def _do_ensemble_experiment(self, classifier_obj, write_results=True, write_predictions=True,
-                                export_classifiers=True):
-        """
-        """
-
-        self._check_output_dir()
-        self._exp_datestamp = xbt.common.generate_datestamp()
-
-        start1 = time.time()
-        print('loading dataset')
-        self.load_dataset()
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-
-        # get train/test/unseen sets
-        print('generating splits')
-        # using this function to ensure an even split by year seems to cause a dramatiuc degradation of classification
-        # results, so turning this off for now, I suspect there is a bug in the function that is doing something weird
-        # to the split
-        # ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature,
-        #                                                                          fraction=self.ens_unseen_fraction,
-        #                                                                          split_feature='year')
-
-        ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature,
-                                                                                 fraction=self.ens_unseen_fraction)
-        xbt_ens_unseen = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers},
-                                                      mode='include', check_type='in_filter_set')
-        xbt_ens_working = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers},
-                                                       mode='exclude', check_type='in_filter_set')
-
-        X_ens_working = xbt_ens_working.filter_features(self.input_features).get_ml_dataset()[0]
-        y_ens_working = xbt_ens_working.filter_features([self.target_feature]).get_ml_dataset()[0]
-
-        xbt_ens_working.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-
-        group_cv1 = sklearn.model_selection.GroupKFold(n_splits=self.num_unseen_splits)
-        # now run the outer cross-validation with the grid search HPT as the classifier,
-        # so for each split, HPT will be run with CV on each set of hyperparameters
-        print('running cross validation')
-        scores = sklearn.model_selection.cross_validate(
-            classifier_obj,
-            X_ens_working, y_ens_working,
-            groups=xbt_ens_working[UNSEEN_FOLD_NAME],
-            cv=group_cv1,
-            return_estimator=self.return_estimator,
-            return_train_score=self.return_train_score,
-            scoring=self._tuning_dict['cv_metrics'],
-            n_jobs=self._n_jobs,
-        )
-
-        self._cv_output = scores
-        self.classifiers = {split_num: est1
-                            for split_num, est1 in enumerate(scores['estimator'])}
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('generating probabilities for evaluation.')
-
-        (df_ens_working,
-         df_ens_unseen,
-         metrics_df_ens,
-         ens_scores_list) = self._evaluate_vote_probs(xbt_ens_working,
-                                                      xbt_ens_unseen,
-                                                      scores,
-                                                      )
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('calculating metrics')
-        metrics_list = {}
-        scores_list = ens_scores_list
-        for split_num, estimator in self.classifiers.items():
-            xbt_train = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
-            xbt_test = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
-            train_metrics, train_scores = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num),
-                                                                'train')
-            test_metrics, test_scores = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num), 'test')
-            unseen_metrics, unseen_scores = self.generate_metrics(estimator, xbt_ens_unseen,
-                                                                  'unseen_{0}'.format(split_num), 'unseen')
-            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')
-            scores_list += [train_scores, test_scores, unseen_scores]
-
-        self.score_table = pandas.DataFrame.from_records(scores_list)
-        print('overall scores for trained classifiers:')
-        print(self.score_table)
-
-        metrics_df_merge = None
-        for label1, metrics1 in metrics_list.items():
-            if metrics_df_merge is None:
-                metrics_df_merge = metrics1
-            else:
-                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1, on='year')
-        metrics_df_merge = pandas.merge(metrics_df_merge, metrics_df_ens, on='year')
-        self.results = metrics_df_merge
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        if write_results:
-            out_name = self.experiment_name + '_' + self._exp_datestamp
-            self.metrics_out_path = os.path.join(self.exp_output_dir,
-                                                 RESULT_FNAME_TEMPLATE.format(name=out_name))
-            self.results.to_csv(self.metrics_out_path)
-            self.scores_out_path = os.path.join(self.exp_output_dir,
-                                                SCORE_FNAME_TEMPLATE.format(name=out_name))
-            self.score_table.to_csv(self.scores_out_path)
-        else:
-            self.metrics_out_path = None
-            self.scores_out_path = None
-
-        # generate imeta algorithm results for the whole dataset
-        imeta_df = self.generate_imeta(self.dataset)
-        imeta_df = imeta_df.rename(
-            columns={'instrument': 'imeta_instrument',
-                     'model': 'imeta_model',
-                     'manufacturer': 'imeta_manufacturer',
-                     })
-        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print(' run prediction on full dataset')
-        result_feature_names = []
-        for split_num, estimator in self.classifiers.items():
-            res_name = RESULT_FEATURE_TEMPLATE.format(
-                target=self.target_feature,
-                clf=self.classifier_name,
-                split_num=split_num)
-            result_feature_names += [res_name]
-            self.generate_prediction(estimator, res_name)
-
-        # generate vote count probabilities from the different trained classifiers
-        self.generate_vote_probabilities(result_feature_names)
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('output predictions')
-        if write_predictions:
-            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.predictions_out_path_list = self.dataset.output_data(
-                self.exp_output_dir,
-                fname_template=OUTPUT_FNAME_TEMPLATE,
-                exp_name=out_name,
-                output_split=self.output_split,
-                target_features=[],
-            )
-        else:
-            self.predictions_out_path_list = []
-
-        if export_classifiers:
-            print('exporting classifier objects through pickle')
-            self.export_classifiers()
-
-        return (self.results, self.classifiers)
-
-    def run_cv_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        print('using classifier opts:\n' + str(self._default_classifier_opts))
-        classifier_obj = self.classifier_class(**self._default_classifier_opts)
-        return self._do_ensemble_experiment(classifier_obj,
-                                            write_results,
-                                            write_predictions,
-                                            export_classifiers)
-
-    def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        # create objects for cross validation and hyperparameter tuning
-        # first set up objects for the inner cross validation, which run for each
-        # set of hyperparameters in the grid search.
-        classifier_obj = self.classifier_class(**self._default_classifier_opts)
-        grid_search_cv = sklearn.model_selection.GridSearchCV(
-            classifier_obj,
-            param_grid=self._tuning_dict['param_grid'],
-            scoring=self._tuning_dict['scoring'],
-            cv=self.num_training_splits,
-        )
-        return self._do_ensemble_experiment(grid_search_cv,
-                                            write_results,
-                                            write_predictions,
-                                            export_classifiers)
-
-    def run_inference(self, write_predictions=True):
-        """
-        """
-        self._check_output_dir()
-        self._exp_datestamp = xbt.common.generate_datestamp()
-
-        print('loading dataset')
-        self.load_dataset()
-
-        print('loading saved classifiers from pickle files.')
-        self.classifiers = {ix1: joblib.load(os.path.join(self.experiment_description_dir,
-                                                          fname1))
-                            for ix1, fname1 in enumerate(self.classifier_fnames)
-                            }
-
-        print('generate imeta algorithm results for the whole dataset')
-        imeta_df = self.generate_imeta(self.dataset)
-        imeta_df = imeta_df.rename(
-            columns={'instrument': 'imeta_instrument',
-                     'model': 'imeta_model',
-                     'manufacturer': 'imeta_manufacturer',
-                     })
-        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
-
-        print(' run prediction on full dataset')
-        result_feature_names = []
-        for split_num, estimator in self.classifiers.items():
-            res_name = RESULT_FEATURE_TEMPLATE.format(
-                target=self.target_feature,
-                clf=self.classifier_name,
-                split_num=split_num)
-            result_feature_names += [res_name]
-            self.generate_prediction(estimator, res_name)
-
-        print('generate vote count probabilities from the different trained classifiers')
-        self.generate_vote_probabilities(result_feature_names)
-
-        if write_predictions:
-            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
-            self.dataset.output_data(
-                self.exp_output_dir,
-                fname_template=OUTPUT_FNAME_TEMPLATE,
-                exp_name=out_name,
-                output_split=self.output_split,
-                target_features=[],
-            )
-
-        return self.classifiers
+    @abs.abstractmethod
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        print('running run_experiment method in ClassificationExperiment base class.')
 
     def _construct_dataset_obj(self):
         if self._do_preproc_extract:
@@ -972,3 +652,353 @@ class ClassificationExperiment(object):
         print(f' writing inference experiment output file to {self.inference_out_json_path}')
         with open(self.inference_out_json_path, 'w') as json_out_file:
             json.dump(out_dict, json_out_file)
+
+
+class SingleExperiment(ClassificationExperiment):
+
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        """
+        """
+        self._check_output_dir()
+        self._exp_datestamp = xbt.common.generate_datestamp()
+
+        start1 = time.time()
+        print('loading dataset')
+        self.load_dataset()
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating splits')
+        X_dict, y_dict, df_dict = self.get_train_test_unseen_sets()
+
+        # fit classifier
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('training classifier')
+        clf1 = self.train_classifier(X_dict['train'], y_dict['train'])
+
+        # generate scores
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating metrics')
+        metrics_train, score_train = self.generate_metrics(clf1, df_dict['train'], 'train', 'train')
+        metrics_test, score_test = self.generate_metrics(clf1, df_dict['test'], 'test', 'test')
+        exp_results = pandas.merge(metrics_train, metrics_test, on='year')
+        metrics_unseen, score_unseen = self.generate_metrics(clf1, df_dict['unseen'], 'unseen', 'unseen')
+        exp_results = exp_results.merge(metrics_unseen, on='year')
+
+        self.score_table = pandas.DataFrame.from_records([score_train, score_test, score_unseen])
+
+        # generate imeta
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating imeta output')
+        exp_results = exp_results.merge(self.score_imeta(df_dict['train'], 'train'), on='year')
+        exp_results = exp_results.merge(self.score_imeta(df_dict['test'], 'est'), on='year')
+        exp_results = exp_results.merge(self.score_imeta(df_dict['unseen'], 'unseen'), on='year')
+
+        self.results = exp_results
+        self.classifiers = {0: clf1}
+
+        # output results to a file
+        if write_results:
+            out_name = self.experiment_name + '_' + self._exp_datestamp
+            self.metrics_out_path = os.path.join(self.exp_output_dir,
+                                                 RESULT_FNAME_TEMPLATE.format(name=out_name))
+            self.results.to_csv(self.metrics_out_path)
+            self.scores_out_path = os.path.join(self.exp_output_dir,
+                                                SCORE_FNAME_TEMPLATE.format(name=out_name))
+            self.score_table.to_csv(self.scores_out_path)
+        else:
+            self.metrics_out_path = None
+            self.scores_out_path = None
+
+        # generate imeta algorithm results for the whole dataset
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating predictions for the whole dataset.')
+        imeta_df = self.generate_imeta(self.dataset)
+        imeta_df = imeta_df.rename(
+            columns={'instrument': 'imeta_instrument',
+                     'model': 'imeta_model',
+                     'manufacturer': 'imeta_manufacturer',
+                     })
+        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
+
+        # run prediction on full dataset
+        feature_name = '{target}_res_{name}'.format(target=self.target_feature,
+                                                    name=self.classifier_name,
+                                                    )
+        self.generate_prediction(self.classifiers[0], feature_name)
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        if write_predictions:
+            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
+            self.predictions_out_path_list = self.dataset.output_data(
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[feature_name],
+            )
+        else:
+            self.predictions_out_path_list = []
+
+        if export_classifiers:
+            print('exporting classifier objects through pickle')
+            self.export_classifiers()
+
+        return (self.results, self.classifiers)
+
+class EnsembleExperiment(ClassificationExperiment):
+
+    def _do_ensemble_experiment(self, classifier_obj, write_results=True, write_predictions=True,
+                                export_classifiers=True):
+        """
+        """
+        self._check_output_dir()
+        self._exp_datestamp = xbt.common.generate_datestamp()
+
+        start1 = time.time()
+        print('loading dataset')
+        self.load_dataset()
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+
+        # get train/test/unseen sets
+        print('generating splits')
+        # using this function to ensure an even split by year seems to cause a dramatiuc degradation of classification
+        # results, so turning this off for now, I suspect there is a bug in the function that is doing something weird
+        # to the split
+        # ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature,
+        #                                                                          fraction=self.ens_unseen_fraction,
+        #                                                                          split_feature='year')
+
+        ensemble_unseen_cruise_numbers = self.xbt_labelled.sample_feature_values(self.unseen_feature,
+                                                                                 fraction=self.ens_unseen_fraction)
+        xbt_ens_unseen = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers},
+                                                      mode='include', check_type='in_filter_set')
+        xbt_ens_working = self.xbt_labelled.filter_obs({self.unseen_feature: ensemble_unseen_cruise_numbers},
+                                                       mode='exclude', check_type='in_filter_set')
+
+        X_ens_working = xbt_ens_working.filter_features(self.input_features).get_ml_dataset()[0]
+        y_ens_working = xbt_ens_working.filter_features([self.target_feature]).get_ml_dataset()[0]
+
+        xbt_ens_working.generate_folds_by_feature(self.unseen_feature, self.num_unseen_splits, UNSEEN_FOLD_NAME)
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+
+        group_cv1 = sklearn.model_selection.GroupKFold(n_splits=self.num_unseen_splits)
+        # now run the outer cross-validation with the grid search HPT as the classifier,
+        # so for each split, HPT will be run with CV on each set of hyperparameters
+        print('running cross validation')
+        scores = sklearn.model_selection.cross_validate(
+            classifier_obj,
+            X_ens_working, y_ens_working,
+            groups=xbt_ens_working[UNSEEN_FOLD_NAME],
+            cv=group_cv1,
+            return_estimator=self.return_estimator,
+            return_train_score=self.return_train_score,
+            scoring=self._tuning_dict['cv_metrics'],
+            n_jobs=self._n_jobs,
+        )
+
+        self._cv_output = scores
+        self.classifiers = {split_num: est1
+                            for split_num, est1 in enumerate(scores['estimator'])}
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating probabilities for evaluation.')
+
+        (df_ens_working,
+         df_ens_unseen,
+         metrics_df_ens,
+         ens_scores_list) = self._evaluate_vote_probs(xbt_ens_working,
+                                                      xbt_ens_unseen,
+                                                      scores,
+                                                      )
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('calculating metrics')
+        metrics_list = {}
+        scores_list = ens_scores_list
+        for split_num, estimator in self.classifiers.items():
+            xbt_train = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
+            xbt_test = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
+            train_metrics, train_scores = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num),
+                                                                'train')
+            test_metrics, test_scores = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num), 'test')
+            unseen_metrics, unseen_scores = self.generate_metrics(estimator, xbt_ens_unseen,
+                                                                  'unseen_{0}'.format(split_num), 'unseen')
+            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')
+            scores_list += [train_scores, test_scores, unseen_scores]
+
+        self.score_table = pandas.DataFrame.from_records(scores_list)
+        print('overall scores for trained classifiers:')
+        print(self.score_table)
+
+        metrics_df_merge = None
+        for label1, metrics1 in metrics_list.items():
+            if metrics_df_merge is None:
+                metrics_df_merge = metrics1
+            else:
+                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1, on='year')
+        metrics_df_merge = pandas.merge(metrics_df_merge, metrics_df_ens, on='year')
+        self.results = metrics_df_merge
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        if write_results:
+            out_name = self.experiment_name + '_' + self._exp_datestamp
+            self.metrics_out_path = os.path.join(self.exp_output_dir,
+                                                 RESULT_FNAME_TEMPLATE.format(name=out_name))
+            self.results.to_csv(self.metrics_out_path)
+            self.scores_out_path = os.path.join(self.exp_output_dir,
+                                                SCORE_FNAME_TEMPLATE.format(name=out_name))
+            self.score_table.to_csv(self.scores_out_path)
+        else:
+            self.metrics_out_path = None
+            self.scores_out_path = None
+
+        # generate imeta algorithm results for the whole dataset
+        imeta_df = self.generate_imeta(self.dataset)
+        imeta_df = imeta_df.rename(
+            columns={'instrument': 'imeta_instrument',
+                     'model': 'imeta_model',
+                     'manufacturer': 'imeta_manufacturer',
+                     })
+        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print(' run prediction on full dataset')
+        result_feature_names = []
+        for split_num, estimator in self.classifiers.items():
+            res_name = RESULT_FEATURE_TEMPLATE.format(
+                target=self.target_feature,
+                clf=self.classifier_name,
+                split_num=split_num)
+            result_feature_names += [res_name]
+            self.generate_prediction(estimator, res_name)
+
+        # generate vote count probabilities from the different trained classifiers
+        self.generate_vote_probabilities(result_feature_names)
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('output predictions')
+        if write_predictions:
+            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
+            self.predictions_out_path_list = self.dataset.output_data(
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[],
+            )
+        else:
+            self.predictions_out_path_list = []
+
+        if export_classifiers:
+            print('exporting classifier objects through pickle')
+            self.export_classifiers()
+
+        return (self.results, self.classifiers)
+
+
+class CVExperiment(EnsembleExperiment):
+
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        print('using classifier opts:\n' + str(self._default_classifier_opts))
+        classifier_obj = self.classifier_class(**self._default_classifier_opts)
+        return self._do_ensemble_experiment(classifier_obj,
+                                            write_results,
+                                            write_predictions,
+                                            export_classifiers)
+
+class CvhptExperiment(EnsembleExperiment):
+
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        # create objects for cross validation and hyperparameter tuning
+        # first set up objects for the inner cross validation, which run for each
+        # set of hyperparameters in the grid search.
+        classifier_obj = self.classifier_class(**self._default_classifier_opts)
+        grid_search_cv = sklearn.model_selection.GridSearchCV(
+            classifier_obj,
+            param_grid=self._tuning_dict['param_grid'],
+            scoring=self._tuning_dict['scoring'],
+            cv=self.num_training_splits,
+        )
+        return self._do_ensemble_experiment(grid_search_cv,
+                                            write_results,
+                                            write_predictions,
+                                            export_classifiers)
+
+class InferenceExperiment(ClassificationExperiment):
+
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_predictions=True):
+        """
+        """
+        self._check_output_dir()
+        self._exp_datestamp = xbt.common.generate_datestamp()
+
+        print('loading dataset')
+        self.load_dataset()
+
+        print('loading saved classifiers from pickle files.')
+        self.classifiers = {ix1: joblib.load(os.path.join(self.experiment_description_dir,
+                                                          fname1))
+                            for ix1, fname1 in enumerate(self.classifier_fnames)
+                            }
+
+        print('generate imeta algorithm results for the whole dataset')
+        imeta_df = self.generate_imeta(self.dataset)
+        imeta_df = imeta_df.rename(
+            columns={'instrument': 'imeta_instrument',
+                     'model': 'imeta_model',
+                     'manufacturer': 'imeta_manufacturer',
+                     })
+        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
+
+        print(' run prediction on full dataset')
+        result_feature_names = []
+        for split_num, estimator in self.classifiers.items():
+            res_name = RESULT_FEATURE_TEMPLATE.format(
+                target=self.target_feature,
+                clf=self.classifier_name,
+                split_num=split_num)
+            result_feature_names += [res_name]
+            self.generate_prediction(estimator, res_name)
+
+        print('generate vote count probabilities from the different trained classifiers')
+        self.generate_vote_probabilities(result_feature_names)
+
+        if write_predictions:
+            out_name = self.experiment_name + '_cv_' + self._exp_datestamp
+            self.dataset.output_data(
+                self.exp_output_dir,
+                fname_template=OUTPUT_FNAME_TEMPLATE,
+                exp_name=out_name,
+                output_split=self.output_split,
+                target_features=[],
+            )
+
+        return self.classifiers
+

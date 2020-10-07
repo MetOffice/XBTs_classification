@@ -48,14 +48,14 @@ def run_single_experiment():
         'Run training, inference and evaluation on a single split.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
-                                                  exp_args.input_path,
-                                                  exp_args.output_path,
-                                                  output_split=exp_args.output_file_split,
-                                                  do_preproc_extract=exp_args.do_preproc_extract,
-                                                  )
+    xbt_exp = experiment.SingleExperiment(exp_args.json_experiment,
+                                          exp_args.input_path,
+                                          exp_args.output_path,
+                                          output_split=exp_args.output_file_split,
+                                          do_preproc_extract=exp_args.do_preproc_extract,
+                                          )
     try:
-        xbt_exp.run_single_experiment()
+        xbt_exp.run_experiment()
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
@@ -71,14 +71,14 @@ def run_cv_experiment():
         'using cross-validation.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
-                                                  exp_args.input_path,
-                                                  exp_args.output_path,
-                                                  output_split=exp_args.output_file_split,
-                                                  do_preproc_extract=exp_args.do_preproc_extract,
-                                                  )
+    xbt_exp = experiment.CVExperiment(exp_args.json_experiment,
+                                      exp_args.input_path,
+                                      exp_args.output_path,
+                                      output_split=exp_args.output_file_split,
+                                      do_preproc_extract=exp_args.do_preproc_extract,
+                                      )
     try:
-        xbt_exp.run_cv_experiment()
+        xbt_exp.run_experiment()
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
@@ -96,15 +96,15 @@ def run_cvhpt_experiment():
         'cross-validation on each set of parameters.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
-                                                  exp_args.input_path,
-                                                  exp_args.output_path,
-                                                  output_split=exp_args.output_file_split,
-                                                  do_preproc_extract=exp_args.do_preproc_extract,
-                                                  )
+    xbt_exp = experiment.CvhptExperiment(exp_args.json_experiment,
+                                         exp_args.input_path,
+                                         exp_args.output_path,
+                                         output_split=exp_args.output_file_split,
+                                         do_preproc_extract=exp_args.do_preproc_extract,
+                                         )
 
     try:
-        xbt_exp.run_cvhpt_experiment()
+        xbt_exp.run_experiment()
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
@@ -120,15 +120,15 @@ def run_inference():
         'Run inference using previously trained classifiersand evaluation on a single split.'
     )
     return_code = 0
-    xbt_exp = experiment.ClassificationExperiment(exp_args.json_experiment,
-                                                  exp_args.input_path,
-                                                  exp_args.output_path,
-                                                  output_split=exp_args.output_file_split,
-                                                  do_preproc_extract=exp_args.do_preproc_extract,
-                                                  )
+    xbt_exp = experiment.InferenceExperiment(exp_args.json_experiment,
+                                             exp_args.input_path,
+                                             exp_args.output_path,
+                                             output_split=exp_args.output_file_split,
+                                             do_preproc_extract=exp_args.do_preproc_extract,
+                                             )
 
     try:
-        xbt_exp.run_inference()
+        xbt_exp.run_experiment()
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
