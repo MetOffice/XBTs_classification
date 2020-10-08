@@ -953,7 +953,7 @@ class InferenceExperiment(ClassificationExperiment):
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
 
-    def run_experiment(self, write_predictions=True):
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
         self._check_output_dir()

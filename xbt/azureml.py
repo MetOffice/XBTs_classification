@@ -40,22 +40,12 @@ def to_azure_table(input_dict):
     return [dict(zip(['index'] + list(input_dict), record1)) for record1 in input_dict.to_records()]
 
 
-class AzureExperiment(xbt.experiment.ClassificationExperiment):
+class AzureExperiment:
 
-    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+    def _get_azure_context(self):
         self._azml_run = azureml.core.run.Run.get_context()
         self._azml_experiment = self._azml_run.experiment
         self._azml_workspace = self._azml_experiment.workspace
-        #         self._azml_ds_name = input_dataset_name
-
-        # remove this once the externally defined (i.e. in the notebook) mounts are working
-        self._temp_output = tempfile.TemporaryDirectory()
-
-        super().__init__(json_descriptor=json_descriptor,
-                         data_dir=data_dir,
-                         output_dir=output_dir,
-                         output_split=output_split,
-                         do_preproc_extract=do_preproc_extract)
 
     def _write_exp_outputs_to_azml(self):
         # upload small files to the run
@@ -86,20 +76,44 @@ class AzureExperiment(xbt.experiment.ClassificationExperiment):
                 model_upload_name,
             )
 
-    def run_single_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        super().run_single_experiment(write_results, write_predictions, export_classifiers)
+
+class AzureSingleExperiment(xbt.experiment.SingleExperiment, AzureExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        self._get_azure_context()
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_experiment(write_results, write_predictions, export_classifiers)
         self._write_exp_outputs_to_azml()
 
-    def run_cv_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        super().run_cv_experiment(write_results, write_predictions, export_classifiers)
+
+class AzureCvExperiment(xbt.experiment.CVExperiment, AzureExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        self._get_azure_context()
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_experiment(write_results, write_predictions, export_classifiers)
         self._write_exp_outputs_to_azml()
 
-    def run_cvhpt_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        super().run_cvhpt_experiment(write_results, write_predictions, export_classifiers)
+
+class AzureCvExperiment(xbt.experiment.CvhptExperiment, AzureExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        self._get_azure_context()
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_experiment(write_results, write_predictions, export_classifiers)
         self._write_exp_outputs_to_azml()
 
-    def run_inference(self, write_predictions=True):
-        super().run_inference(write_predictions)
+
+class AzureInferenceExperiment(xbt.experiment.InferenceExperiment, AzureExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        self._get_azure_context()
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_experiment(write_results, write_predictions, export_classifiers)
         self._write_exp_outputs_to_azml()
 
 
@@ -157,14 +171,15 @@ def run_azml_experiment():
     print(f'output directory {exp_args.output_dir}')
     print(f'json experiment path {json_desc_path}')
 
-    xbt_exp = AzureExperiment(json_descriptor=json_desc_path,
-                              data_dir=exp_args.input_dir,
-                              output_dir=output_dir,
-                              do_preproc_extract=exp_args.do_preproc_extract,
-                              output_split=exp_args.output_file_split,
-                              )
+    xbt_exp = AzureSingleExperiment(
+        json_descriptor=json_desc_path,
+        data_dir=exp_args.input_dir,
+        output_dir=output_dir,
+        do_preproc_extract=exp_args.do_preproc_extract,
+        output_split=exp_args.output_file_split,
+    )
     try:
-        xbt_exp.run_single_experiment()
+        xbt_exp.run_experiment()
     except RuntimeError as e1:
         print(f'Runtime error:\n {str(e1)}')
         return_code = 1
