@@ -91,17 +91,19 @@ class ClassificationExperiment(abc.ABC):
         self.scores_out_path = None
         self.predictions_out_path_list = []
 
-    @abs.abstractmethod
+    @abc.abstractmethod
     def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         print('running run_experiment method in ClassificationExperiment base class.')
 
     def _construct_dataset_obj(self):
         if self._do_preproc_extract:
-            self._csv_tmp_dir = tempfile.TemporaryDirectory()
+            self._csv_tmp_dir_obj = tempfile.TemporaryDirectory()
+            self._csv_tmp_dir = self._csv_tmp_dir_obj.name
             self.dataset = xbt.dataset.XbtDataset(
-                self._csv_tmp_dir,
-                self.year_range,
-                nc_dir=self.data_dir,
+                directory=self.data_dir,
+                year_range=self.year_range,
+                do_preproc_extract=self._do_preproc_extract,
+                pp_csv_dir=self._csv_tmp_dir,
                 pp_prefix=self.preproc_params['prefix'],
                 pp_suffix=self.preproc_params['suffix'],
             )
@@ -196,50 +198,7 @@ class ClassificationExperiment(abc.ABC):
         # these options will be used for running a single experiment (i.e. no CV or HPT)
         self._default_classifier_opts = {k1: v1[0] for k1, v1 in self._tuning_dict['param_grid'].items()}
 
-    def optimize_and_predict(self, out_path='.', year=''):
-        """
-        OLD FUNCTION - TO BE DELETED
-        Get information about the learner to be used, the hyperparameters to be tuned, and the use grid-search
-        """
-
-        grid_search_parameters = self.dictionary['tuning']
-        grid_search_parameters['estimator'] = learner
-
-        for key, item in grid_search_parameters['param_grid'].items():
-            if isinstance(item, str):
-                grid_search_parameters['param_grid'][key] = ast.literal_eval(item)
-        print('Initializing grid search')
-        grid_search = GridSearchCV(**grid_search_parameters)
-
-        classification_result = {}
-
-        sub_directory_name = os.path.basename(self.json_descriptor).split('.')[0]
-
-        print('Starting tuning procedure')
-        for y_train, y_test, output_target in zip(self.y_trains, self.y_tests, self.dictionary['output_features']):
-            start = time.time()
-            grid_search.fit(self.X_train, y_train)
-            end = time.time()
-
-            print('Tuning procedure for ' + output_target + ' completed, time elapsed = ' + str(
-                end - start) + ' seconds.')
-            prediction_probabilities = grid_search.predict_proba(self.X_test)
-            prediction = grid_search.predict(self.X_test)
-            classification_accuracy_score = accuracy_score(prediction, y_test)
-            classification_recall_score = recall_score(prediction, y_test, average='weighted')
-
-            classification_result['probabilities'] = prediction_probabilities.mean(axis=0)
-            classification_result['class_mapping'] = self.output_maps[output_target]
-            classification_result['accuracy'] = classification_accuracy_score
-            classification_result['recall'] = classification_recall_score
-            classification_result['rescale_all'] = self.dictionary['rescale_all']
-            classification_result['input_features'] = self.dictionary['input_features']
-            classification_result['applied_operations'] = list(self.dictionary['operations'].keys())
-            classification_result['best_hyperparameters'] = grid_search.best_params_
-
-            self.generate_results(output_target, out_path, learner_class_name, sub_directory_name,
-                                  grid_search.cv_results_, classification_result, year)
-
+        
     def generate_results(self, output_target, out_path, learner_class_name, sub_directory_name, tuning_result,
                          classification_result, year):
         """
