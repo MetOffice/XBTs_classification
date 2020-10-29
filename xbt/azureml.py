@@ -102,6 +102,16 @@ class AzureCvExperiment(xbt.experiment.CVExperiment, AzureExperiment):
 
 
 class AzureCvhptExperiment(xbt.experiment.CvhptExperiment, AzureExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        self._get_azure_context()
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+        super().run_experiment(write_results, write_predictions, export_classifiers)
+        self._write_exp_outputs_to_azml()
+
+        
+class AzureHyperdriveExperiment(xbt.experiment.SingleExperiment, AzureExperiment):
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False, add_hpt={}):
         self._get_azure_context()
         self._additional_hyperparameters = add_hpt
@@ -113,7 +123,7 @@ class AzureCvhptExperiment(xbt.experiment.CvhptExperiment, AzureExperiment):
         """
     def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         super().run_experiment(write_results, write_predictions, export_classifiers)
-        self._write_exp_outputs_to_azml()
+        self._write_exp_outputs_to_azml()      
 
 
 class AzureInferenceExperiment(xbt.experiment.InferenceExperiment, AzureExperiment):
@@ -126,8 +136,6 @@ class AzureInferenceExperiment(xbt.experiment.InferenceExperiment, AzureExperime
         self._write_exp_outputs_to_azml()
 
         
-class AzureExperimentLauncher(xbt.experiment.)
-
 def _get_parser(description):
     parser = argparse.ArgumentParser(description=description)
     help_msg = 'The path to the JSON file containing the experiment definition.'
@@ -164,6 +172,7 @@ def _get_parser(description):
                         dest='output_root',
                         help=help_msg,
                         )
+    return parser
 
 def get_arguments(description):
     parser = _get_parser(description)
@@ -235,6 +244,37 @@ def run_azml_cv_experiment():
 
 
 def run_azml_cvhpt_experiment():
+    exp_args = get_arguments(
+        'Run training, inference and evaluation using cross-validation.'
+    )
+    return_code = 0
+
+    json_desc_path = os.path.join(exp_args.config_dir, exp_args.json_experiment)
+    output_dir = os.path.join(exp_args.output_root,
+                              exp_args.output_dir,
+                              )
+
+    print(f'input directory {exp_args.input_dir}')
+    print(f'output directory {exp_args.output_dir}')
+    print(f'json experiment path {json_desc_path}')
+
+    xbt_exp = AzureCvhptExperiment(
+        json_descriptor=json_desc_path,
+        data_dir=exp_args.input_dir,
+        output_dir=output_dir,
+        do_preproc_extract=exp_args.do_preproc_extract,
+        output_split=exp_args.output_file_split,
+    )
+    try:
+        xbt_exp.run_experiment()
+    except RuntimeError as e1:
+        print(f'Runtime error:\n {str(e1)}')
+        return_code = 1
+
+    return return_code
+
+
+def run_azml_hyperdrive_experiment():
     exp_args, hpts = get_partial_arguments('Run training, inference and evaluation using cross-validation and hyperparameter tuning.')
     
     
