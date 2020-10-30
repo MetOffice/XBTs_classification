@@ -110,6 +110,12 @@ class AzureCvhptExperiment(xbt.experiment.CvhptExperiment, AzureExperiment):
         super().run_experiment(write_results, write_predictions, export_classifiers)
         self._write_exp_outputs_to_azml()
 
+
+HPT_TYPES = {
+    'max_depth': int,
+    'min_samples_leaf': int,
+    'criterion': str,
+}
         
 class AzureHyperdriveExperiment(xbt.experiment.SingleExperiment, AzureExperiment):
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False, add_hpt={}):
@@ -117,10 +123,35 @@ class AzureHyperdriveExperiment(xbt.experiment.SingleExperiment, AzureExperiment
         self._additional_hyperparameters = add_hpt
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
 
-    def _overwrite_hyperparameters(self):
+    def _write_exp_outputs_to_azml(self):
+        super()._write_exp_outputs_to_azml()
+        
+        self._azml_run.log(name='recall',
+                          value=self.score_table[self.score_table.name == 'unseen']['recall_all'],
+                          )
+
+        self._azml_run.log(name='precision',
+                          value=self.score_table[self.score_table.name == 'unseen']['precision_all'],
+                          )
+
+        self._azml_run.log(name='f1',
+                          value=self.score_table[self.score_table.name == 'unseen']['f1_all'],
+                          )
+
+    
+    def read_json_file(self):
         """
-        Overwrite hyperparameters read in from the JSON file with those entered through the command line arguments.
+        Read the json file, then overwrite hyperparameters read in from the JSON file
+        with those entered through the command line arguments.
         """
+        super().read_json_file()
+        for k1,v1 in self._additional_hyperparameters.items():
+            if k1 in self._default_classifier_opts:
+                self._default_classifier_opts[k1] = HPT_TYPES[k1](v1)
+        
+        print(f'running with hyperparameters:\n{self._default_classifier_opts}')
+        
+        
     def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         super().run_experiment(write_results, write_predictions, export_classifiers)
         self._write_exp_outputs_to_azml()      
@@ -282,7 +313,7 @@ def run_azml_hyperdrive_experiment():
     for ix1,par1 in enumerate(hpts):
         if par1[:2] == '--':
             try:
-                hpt_dict[par1[2:]] == hpts[ix1+1]
+                hpt_dict[par1[2:]] = hpts[ix1+1]
             except IndexError:
                 print('Incorrectly entered hyperparameter arguments.')
     
@@ -299,16 +330,13 @@ def run_azml_hyperdrive_experiment():
     print(f'output directory {exp_args.output_dir}')
     print(f'json experiment path {json_desc_path}')
 
-    # TODO: pass in overide parameters as an argument to the class
-    # TODO: create a separate function for running cvhpt in one job vs jobs that are being called from azureML hyperdrive
-    # TODO: create a separate class for running cvhpt in one job vs jobs that are being called from azureML hyperdrive
-    # TODO: class must override the read json function,, which calls the base class version, then overrides any hyperparameters that have been defined on the command line (this will have been done by the hyperparameter tuning)
-    xbt_exp = AzureCvhptExperiment(
+    xbt_exp = AzureHyperdriveExperiment(
         json_descriptor=json_desc_path,
         data_dir=exp_args.input_dir,
         output_dir=output_dir,
         do_preproc_extract=exp_args.do_preproc_extract,
         output_split=exp_args.output_file_split,
+        add_hpt=hpt_dict,
     )
     try:
         xbt_exp.run_experiment()
