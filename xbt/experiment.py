@@ -8,6 +8,7 @@ import os
 import pandas
 import time
 import abc
+import random
 
 import sklearn.metrics
 
@@ -91,6 +92,7 @@ class ClassificationExperiment(abc.ABC):
         self.metrics_out_path = None
         self.scores_out_path = None
         self.predictions_out_path_list = []
+        self._random_state = random.randint(1, 2**32)
 
     @abc.abstractmethod
     def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
@@ -721,11 +723,16 @@ class SingleExperiment(ClassificationExperiment):
 class HptExperiment(SingleExperiment):
     def _get_classifier(self):
         classifier_obj = self.classifier_class(**self._default_classifier_opts)
+        self.cv_splitter = sklearn.model_selection.KFold(
+            n_splits=self.num_training_splits,
+            shuffle=True,
+            random_state=self._random_state,
+        )
         grid_search_cv = sklearn.model_selection.GridSearchCV(
             classifier_obj,
             param_grid=self._tuning_dict['param_grid'],
             scoring=self._tuning_dict['scoring'],
-            cv=self.num_training_splits,
+            cv=self.cv_splitter,
         )
         return grid_search_cv
 
@@ -929,12 +936,18 @@ class CvhptExperiment(EnsembleExperiment):
         # create objects for cross validation and hyperparameter tuning
         # first set up objects for the inner cross validation, which run for each
         # set of hyperparameters in the grid search.
+        self._cv_splitter = sklearn.model_selection.KFold(
+            n_splits=self.num_training_splits,
+            shuffle=True,
+            random_state=self._random_state,
+        )
+
         classifier_obj = self.classifier_class(**self._default_classifier_opts)
         grid_search_cv = sklearn.model_selection.GridSearchCV(
             classifier_obj,
             param_grid=self._tuning_dict['param_grid'],
             scoring=self._tuning_dict['scoring'],
-            cv=self.num_training_splits,
+            cv=self._cv_splitter,
         )
         return self._do_ensemble_experiment(grid_search_cv,
                                             write_results,
