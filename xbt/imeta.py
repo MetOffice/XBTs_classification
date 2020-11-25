@@ -144,10 +144,11 @@ def generate_imeta():
     imeta_res_df.to_csv(metrics_out_path)
 
     # write ID and imeta output to a CSV file
-    classifications_out_path = os.path.join(user_args.output_path,
-                                            f'xbt_classifications_imeta.csv',
-                                            )
-    print(f'writing classifications to file {classifications_out_path} (elapsed {time.time() - start_time} seconds)')
+    classifications_out_template = 'xbt_classifications_imeta_{exp_name}_{subset}.csv'
+    print(f'writing classifications to file {user_args.output_path} (elapsed {time.time() - start_time} seconds)')
     xbt_full.filter_features(xbt.dataset.ID_FEATURES + [imeta_feature]).output_data(
-        classifications_out_path, )
+        out_dir=user_args.output_path,
+        fname_template=classifications_out_template,
+        exp_name='imeta',
+    )
     print('imeta generation complete. (elapsed {time.time()-start_time} seconds)')

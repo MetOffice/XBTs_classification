@@ -8,6 +8,7 @@ import os
 import pandas
 import time
 import abc
+import random
 
 import sklearn.metrics
 
@@ -20,6 +21,7 @@ from xbt.imeta import imeta_classification
 
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
 SCORE_FNAME_TEMPLATE = 'xbt_score_{name}.csv'
+PARAM_FNAME_TEMPLATE = 'xbt_hyperparams_{name}.json'
 OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{exp_name}_{subset}.csv'
 CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
 
@@ -90,6 +92,7 @@ class ClassificationExperiment(abc.ABC):
         self.metrics_out_path = None
         self.scores_out_path = None
         self.predictions_out_path_list = []
+        self._random_state = random.randint(1, 2**32)
 
     @abc.abstractmethod
     def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
@@ -256,11 +259,6 @@ class ClassificationExperiment(abc.ABC):
                   'unseen': y_unseen_all,
                   }
         return X_dict, y_dict, df_dict
-
-    def train_classifier(self, X_train, y_train):
-        clf = self.classifier_class(**self._default_classifier_opts)
-        clf.fit(X_train, y_train)
-        return clf
 
     def score_year(self, xbt_df, year, clf):
         X_year = xbt_df.filter_obs({'year': year}, ).filter_features(self.input_features).get_ml_dataset()[0]
@@ -618,7 +616,12 @@ class SingleExperiment(ClassificationExperiment):
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
 
-    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
+    def _get_classifier(self):
+        clf = self.classifier_class(**self._default_classifier_opts)
+        return clf
+
+    def run_experiment(self, write_results=True, write_predictions=True,
+                       export_classifiers=True):
         """
         """
         self._check_output_dir()
@@ -637,7 +640,10 @@ class SingleExperiment(ClassificationExperiment):
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
         print('training classifier')
-        clf1 = self.train_classifier(X_dict['train'], y_dict['train'])
+
+        clf1 = self. _get_classifier()
+        clf1.fit(X_dict['train'], y_dict['train'])
+
 
         # generate scores
         duration1 = time.time() - start1
@@ -712,6 +718,41 @@ class SingleExperiment(ClassificationExperiment):
             self.export_classifiers()
 
         return (self.results, self.classifiers)
+
+
+class HptExperiment(SingleExperiment):
+    def _get_classifier(self):
+        classifier_obj = self.classifier_class(**self._default_classifier_opts)
+        self.cv_splitter = sklearn.model_selection.KFold(
+            n_splits=self.num_training_splits,
+            shuffle=True,
+            random_state=self._random_state,
+        )
+        grid_search_cv = sklearn.model_selection.GridSearchCV(
+            classifier_obj,
+            param_grid=self._tuning_dict['param_grid'],
+            scoring=self._tuning_dict['scoring'],
+            cv=self.cv_splitter,
+        )
+        return grid_search_cv
+
+    def run_experiment(self, write_results=True, write_predictions=True,
+                       export_classifiers=True):
+        super().run_experiment(write_results, write_predictions,
+                               export_classifiers)
+        if write_results:
+            self.best_hp = self.classifiers[0].best_estimator_.get_params()
+            # output results to a file
+            out_name = self.experiment_name + '_' + self._exp_datestamp
+
+            self.hpt_out_path = os.path.join(self.exp_output_dir,
+                                             PARAM_FNAME_TEMPLATE.format(
+                                                 name=out_name))
+            with open(self.hpt_out_path, 'w') as json_hp_file:
+                json.dump(self.best_hp, json_hp_file)
+
+
+
 
 class EnsembleExperiment(ClassificationExperiment):
 
@@ -895,12 +936,18 @@ class CvhptExperiment(EnsembleExperiment):
         # create objects for cross validation and hyperparameter tuning
         # first set up objects for the inner cross validation, which run for each
         # set of hyperparameters in the grid search.
+        self._cv_splitter = sklearn.model_selection.KFold(
+            n_splits=self.num_training_splits,
+            shuffle=True,
+            random_state=self._random_state,
+        )
+
         classifier_obj = self.classifier_class(**self._default_classifier_opts)
         grid_search_cv = sklearn.model_selection.GridSearchCV(
             classifier_obj,
             param_grid=self._tuning_dict['param_grid'],
             scoring=self._tuning_dict['scoring'],
-            cv=self.num_training_splits,
+            cv=self._cv_splitter,
         )
         return self._do_ensemble_experiment(grid_search_cv,
                                             write_results,
