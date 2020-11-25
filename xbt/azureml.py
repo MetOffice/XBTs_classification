@@ -60,6 +60,13 @@ class AzureExperiment:
             self._azml_run.upload_file(os.path.split(self.scores_out_path)[1],
                                        self.scores_out_path)
 
+        if self.score_table is not None:
+            for ix1 in self.score_table.index:
+                for c1 in ['precision_all', 'recall_all', 'f1_all']:
+                    metric_name = self.score_table.at[ix1,'name'] + '_' + c1
+                    metric_value = self.score_table.at[ix1, c1]
+                    self._azml_run.log(metric_name, metric_value)
+            
         if self.metrics_out_path:
             print(f'uploading metrics file {self.metrics_out_path} to AzML run')
             self._azml_run.upload_file(os.path.split(self.metrics_out_path)[1],
