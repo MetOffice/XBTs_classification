@@ -7,6 +7,7 @@ export XBT_JSON_EXP=$4
 echo Launching experiment from file ${XBT_JSON_EXP}
 export XBT_INPUT_PATH=${XBT_INPUT_PATH:-${SCRATCH}/xbt-data/csv_with_imeta/}
 export XBT_OUTPUT_PATH=${XBT_OUTPUT_PATH:-${SCRATCH}/xbt-data/refactor_outputs_202010}
+export XBT_PREPROC_ARG${XBT_PREPROC_ARG:-""}
 
 export DATESTAMP=$(date '+%Y%m%d_%H%M%S')
 export MEM_ALLOC=32G
