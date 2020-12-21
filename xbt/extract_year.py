@@ -14,8 +14,6 @@ import pandas
 IQUOD_TEMPLATE = 'iquod_xbt_{year}.nc'
 XBT_OUT_TEMPLATE = 'xbt_{year}.csv'
 
-DEFAULT_TEMP_DIR = '/scratch'
-
 DEFAULT_PREPROC_TASKS = 4
 
 
@@ -161,7 +159,7 @@ def process_args():
     parser.add_argument('--output-path', dest='output_path', help=help_msg, required=True)
     help_msg = ('The directory to write out the intermediate CSV files after '
                 'preprocessing before they are join and split by year.')
-    parser.add_argument('--temp-path', dest='temp_path', help=help_msg, default=DEFAULT_TEMP_DIR)
+    parser.add_argument('--temp-path', dest='temp_path', help=help_msg, default=None)
     help_msg = 'The start year of the range to output.'
     parser.add_argument('--start-year', dest='start_year', help=help_msg, default=None, type=int)
     help_msg = 'The end year of the range to output.'

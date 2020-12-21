@@ -6,11 +6,11 @@ export XBT_REPO_ROOT=$3
 export XBT_JSON_EXP=$4
 echo Launching experiment from file ${XBT_JSON_EXP}
 export XBT_INPUT_PATH=${XBT_INPUT_PATH:-${SCRATCH}/xbt-data/csv_with_imeta/}
-export XBT_OUTPUT_PATH=${XBT_OUTPUT_PATH:-${SCRATCH}/xbt-data/refactor_outputs_202010}
+export XBT_OUTPUT_PATH=${XBT_OUTPUT_PATH:-${SCRATCH}/xbt-results/default/}
 export XBT_PREPROC_ARG${XBT_PREPROC_ARG:-""}
 
 export DATESTAMP=$(date '+%Y%m%d_%H%M%S')
-export MEM_ALLOC=32G
+export MEM_ALLOC=48G
 export NUM_TASKS=4
 export XBT_LOG_DIR=${XBT_LOG_DIR:-/data/users/shaddad/xbt_logs}
 export OUTPATH=${XBT_LOG_DIR}/xbt_exp_${XBT_EXP_NAME}_${DATESTAMP}_log.out
