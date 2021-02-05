@@ -1,0 +1,8 @@
+sources:
+  xbt_preproc:
+    description: XBT profiles from the World Ocean Database that have been preprocessed for machine learning.
+    driver: csv
+    args:
+      urlpath: '{{ CATALOG_DIR }}/xbt_*.csv'
+    metadata:
+      origin_url: 'https://www.ncei.noaa.gov/products/world-ocean-database'
