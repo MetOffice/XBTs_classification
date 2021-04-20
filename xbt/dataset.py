@@ -330,6 +330,8 @@ class XbtDataset():
                         check1 = (value == xbt_df[key])
                 elif check_type == 'in_filter_set':
                     check1 = xbt_df[key].apply(lambda x: x in value)
+                elif check_type == 'exact':
+                    check1 = xbt_df[key] == value
 
             filter_outputs += [check1.astype(bool)]
 
@@ -646,8 +648,18 @@ class XbtDataset():
             self._feature_encoders, features_to_process, FEATURE_PROCESSORS, return_data)
 
         self._feature_encoders.update(encoders)
-
-        return (ml_ds, self._feature_encoders, ml_features, column_indices)
+        self._feature_names_dict = {f1: [f1] for f1 in self._feature_encoders.keys()}
+        self._feature_names_dict.update({f1: [str(f1) + '_' + str(cat1) for cat1 in enc1.categories_[0]] 
+                                         for f1, enc1 in self._feature_encoders.items()
+                                         if type(enc1) == sklearn.preprocessing._encoders.OneHotEncoder})
+        if len(ml_features) > 0:
+            fn_out = [self._feature_names_dict[f1] for f1 in ml_features.keys()]
+            dataset_feature_names = functools.reduce(lambda x,y:x+y, 
+                                                 fn_out)
+        else:
+            dataset_feature_names = []
+        
+        return (ml_ds, self._feature_encoders, ml_features, column_indices, dataset_feature_names)
 
     def encode_target(self, refresh=False, return_data=True):
         """
