@@ -536,7 +536,7 @@ class XbtDataset():
                 # that matches that year and instrument.
                 for params in construct_param_combos(self.xbt_df, features):
                     self.xbt_df.loc[self._get_subset_df(dict(zip(features, params))).sample(
-                        **opt_dict).index, TRAIN_SET_FEATURE] = False
+                        **opt_dict).index, split_name] = False
 
             else:
                 self.xbt_df.loc[self.xbt_df.sample(**opt_dict).index, split_name] = False
