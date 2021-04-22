@@ -2,6 +2,9 @@ import os
 import re
 import pandas
 import functools
+
+import fsspec 
+
 import dask.dataframe
 import numpy
 import tempfile
@@ -288,8 +291,9 @@ class XbtDataset():
         else:
             load_dir = self.directory
 
+        load_dir_mapper = fsspec.get_mapper(load_dir)
         if self.year_range is None:
-            year_list = [int(re.search(XBT_CSV_REGEX_STR, fname1).group('year')) for fname1 in os.listdir(load_dir)]
+            year_list = [int(re.search(XBT_CSV_REGEX_STR, fname1).group('year')) for fname1 in load_dir_mapper]
             start_year = min(year_list)
             end_year = max(year_list)
             self.year_range = (start_year, end_year)
@@ -297,7 +301,7 @@ class XbtDataset():
 
         self.dataset_files = [os.path.join(load_dir, XBT_FNAME_TEMPLATE.format(year=year)) for year in
                               range(start_year, end_year + 1)]
-        self.dataset_files = [f1 for f1 in self.dataset_files if os.path.isfile(f1)]
+        self.dataset_files = [f1 for f1 in self.dataset_files if load_dir_mapper.fs.isfile(f1)]
         df_in_list = [self._read_func(year_csv_path, self.features_to_load) for year_csv_path in self.dataset_files]
         df_processed = [self._preproc_func(df_in) for df_in in df_in_list]
         self.xbt_df = self._concat_func(df_processed)
