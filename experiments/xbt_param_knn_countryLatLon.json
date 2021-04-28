@@ -1,0 +1,28 @@
+{"input_features": ["country", "max_depth", "year","lat","lon"],
+ "output_feature":"instrument",
+ "parallel_jobs": 1,
+"preproc": {
+         "prefix": "ocldb",
+         "suffix": "nc"
+ },
+"split": {
+          "unseen_feature": "cruise_number",
+          "balance_features": ["year", "instrument"],
+          "num_unseen_splits": 5,
+          "num_training_splits": 5
+        },
+ "experiment_name": "knn_country",
+ "learner":{"module_name":"sklearn.neighbors",
+            "python_class":"KNeighborsClassifier",
+            "name": "kNN"
+           },
+ "tuning":{"param_grid": {"weights": ["uniform", "distance" ],
+                          "n_neighbors": [5,2,10,20]
+                         },
+           "scoring":"recall_micro",
+           "n_jobs":1,
+           "return_train_score":true,
+           "return_estimator": true,
+           "cv_metrics": ["recall_micro", "precision_micro", "f1_micro"]
+          }
+}

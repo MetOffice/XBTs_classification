@@ -11,6 +11,7 @@ import abc
 import random
 
 import sklearn.metrics
+import sklearn.inspection
 
 pandas.options.mode.chained_assignment = None
 
@@ -19,7 +20,10 @@ import xbt.wod
 import xbt.dataset
 from xbt.imeta import imeta_classification
 
+IMPORTANCE_REPEATS = 20
+
 RESULT_FNAME_TEMPLATE = 'xbt_metrics_{name}.csv'
+IMPORTANCE_FNAME_TEMPLATE = 'xbt_importance_{name}.csv'
 SCORE_FNAME_TEMPLATE = 'xbt_score_{name}.csv'
 PARAM_FNAME_TEMPLATE = 'xbt_hyperparams_{name}.json'
 OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{exp_name}_{subset}.csv'
@@ -237,7 +241,7 @@ class ClassificationExperiment(abc.ABC):
         xbt_train_all, xbt_test_all = xbt_working.train_test_split(refresh=True,
                                                                    features=self.balance_features,
                                                                    train_fraction=self.train_fraction)
-        X_train_all = xbt_train_all.filter_features(self.input_features).get_ml_dataset()[0]
+        X_train_all,_,_,_, feature_names = xbt_train_all.filter_features(self.input_features).get_ml_dataset()
         X_test_all = xbt_test_all.filter_features(self.input_features).get_ml_dataset()[0]
         y_train_all = xbt_train_all.filter_features([self.target_feature]).get_ml_dataset()[0]
         y_test_all = xbt_test_all.filter_features([self.target_feature]).get_ml_dataset()[0]
@@ -258,7 +262,7 @@ class ClassificationExperiment(abc.ABC):
                   'test': y_test_all,
                   'unseen': y_unseen_all,
                   }
-        return X_dict, y_dict, df_dict
+        return X_dict, y_dict, df_dict, feature_names
 
     def score_year(self, xbt_df, year, clf):
         X_year = xbt_df.filter_obs({'year': year}, ).filter_features(self.input_features).get_ml_dataset()[0]
@@ -719,6 +723,69 @@ class SingleExperiment(ClassificationExperiment):
 
         return (self.results, self.classifiers)
 
+class ImportanceExperiment(ClassificationExperiment):
+
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+
+    def _get_classifier(self):
+        clf = self.classifier_class(**self._default_classifier_opts)
+        return clf
+
+    def run_experiment(self, write_results=True, write_predictions=True,
+                       export_classifiers=True):
+        """
+        """
+        self._check_output_dir()
+        self._exp_datestamp = xbt.common.generate_datestamp()
+
+        start1 = time.time()
+        print('loading dataset')
+        self.load_dataset()
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating splits')
+        X_dict, y_dict, df_dict, feature_names = self.get_train_test_unseen_sets()
+
+        # fit classifier
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('training classifier')
+
+        clf1 = self. _get_classifier()
+        clf1.fit(X_dict['train'], y_dict['train'])
+
+        fi1 = sklearn.inspection.permutation_importance(
+            clf1,
+            X_dict['test'],
+            y_dict['test'],
+            n_repeats=IMPORTANCE_REPEATS,
+            random_state=0
+        )
+        importance_df = pandas.DataFrame(
+            {'instrument': feature_names,
+             'importances_mean': fi1.importances_mean,
+             'importances_stdev': fi1.importances_std,
+             }
+        )
+
+        self.results = importance_df
+        self.classifiers = {0: clf1}
+
+        if write_results:
+            out_name = self.experiment_name + '_' + self._exp_datestamp
+            self.metrics_out_path = os.path.join(self.exp_output_dir,
+                                                 IMPORTANCE_FNAME_TEMPLATE.format(
+                                                     name=out_name))
+            self.results.to_csv(self.metrics_out_path)
+        else:
+            self.metrics_out_path = None
+
+        self.scores_out_path = None
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        return (self.results, self.classifiers)
 
 class HptExperiment(SingleExperiment):
     def _get_classifier(self):

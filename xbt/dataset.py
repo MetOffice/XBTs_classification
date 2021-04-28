@@ -289,7 +289,7 @@ class XbtDataset():
             load_dir = self.directory
 
         if self.year_range is None:
-            year_list = [int(re.search(XBT_CSV_REGEX_STR, fname1).group('year')) for fname1 in os.listdir(load_dir)]
+            year_list = [int(re.search(XBT_CSV_REGEX_STR, fname1).group('year')) for fname1 in os.listdir(load_dir) if re.search(XBT_CSV_REGEX_STR, fname1)]
             start_year = min(year_list)
             end_year = max(year_list)
             self.year_range = (start_year, end_year)
