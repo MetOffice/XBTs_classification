@@ -20,7 +20,7 @@ ${XBT_LAUNCH_SCRIPT} ${EXEC_NAME} ${BATCH_PREFIX}_randomForest_countryLatLon ${X
 
 export JOB_TIME=1440
 ${XBT_LAUNCH_SCRIPT} ${EXEC_NAME} ${BATCH_PREFIX}_mlp_countryLatLon ${XBT_REPO_ROOT}  ${XBT_REPO_ROOT}/experiments/xbt_param_mlp_countryLatLon.json
-${XBT_LAUNCH_SCRIPT} ${EXEC_NAME} ${BATCH_PREFIX}_knn_countryLatLon ${XBT_REPO_ROOT}  ${XBT_REPO_ROOT}/experiments/xbt_param_knn_countryLatLon.json
 
 export JOB_TIME=2160
+${XBT_LAUNCH_SCRIPT} ${EXEC_NAME} ${BATCH_PREFIX}_knn_countryLatLon ${XBT_REPO_ROOT}  ${XBT_REPO_ROOT}/experiments/xbt_param_knn_countryLatLon.json
 ${XBT_LAUNCH_SCRIPT} ${EXEC_NAME} ${BATCH_PREFIX}_logreg_countryLatLon ${XBT_REPO_ROOT}  ${XBT_REPO_ROOT}/experiments/xbt_param_logreg_countryLatLon.json

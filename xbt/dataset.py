@@ -379,7 +379,7 @@ class XbtDataset():
         profiles which have had the imeta algorithm applied.
         
         values of mode: include, exclude
-        values of check_type: match_subset, in_filter_set
+        values of check_type: match_subset, in_filter_set, exact
         """
         subset_df = self._get_subset_df(filters, mode, check_type)
         filtered_dataset = XbtDataset(year_range=self.year_range, directory=self.directory, df=subset_df)
