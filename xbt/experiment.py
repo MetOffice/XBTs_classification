@@ -34,7 +34,7 @@ CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
 UNSEEN_FOLD_NAME = 'unseen_fold'
 RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
 PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat}'
-MAX_PROB_FEATURE_NAME = '{target}_max_prob'
+MAX_PROB_FEATURE_NAME = 'res_{target}_max_prob'
 
 TEST_VAR_NAME = 'test'
 TEST_PART_NAME = 'test_part'
@@ -172,7 +172,7 @@ class ClassificationExperiment(abc.ABC):
                 'metric_args_dict': {}},
         }
 
-        self.metrics = {
+        self.results = {
             TEST_VAR_NAME: {},
             TEST_WHOLE_NAME: {},
             TEST_PART_NAME: {},
@@ -312,7 +312,7 @@ class ClassificationExperiment(abc.ABC):
                   }
         return X_dict, y_dict, df_dict, feature_names
 
-    def calc_metric_subset(self, xbt_subset, clf1, filter_dict, metric_func, metric_args_dict):
+    def predict_and_calc_metric_subset(self, xbt_subset, clf1, filter_dict, metric_func, metric_args_dict):
         if filter_dict:
             xbt_selected = xbt_subset.filter_obs(filter_dict)
         else:
@@ -326,6 +326,19 @@ class ClassificationExperiment(abc.ABC):
             **metric_args_dict)
         return metrics_result
 
+    def calc_column_metric_subset(self, xbt_subset, column_name, filter_dict, metric_func, metric_args_dict):
+        if filter_dict:
+            xbt_selected = xbt_subset.filter_obs(filter_dict)
+        else:
+            xbt_selected = xbt_subset
+        if xbt_selected.shape[0] == 0:
+            return 0.0
+        metrics_result = metric_func(
+            xbt_selected.filter_features([column_name]).get_ml_dataset()[0],
+            xbt_selected.filter_features([self.target_feature]).get_ml_dataset()[0],
+            **metric_args_dict)
+        return metrics_result
+
     def score_year(self, xbt_df, year, clf):
         X_year = xbt_df.filter_obs({'year': year}, ).filter_features(self.input_features).get_ml_dataset()[0]
         y_year = xbt_df.filter_obs({'year': year}).filter_features([self.target_feature]).get_ml_dataset()[0]
@@ -335,12 +348,15 @@ class ClassificationExperiment(abc.ABC):
         return metric_year
 
     def generate_imeta(self, xbt_ds):
+        try:
+            if not self.imeta_feature_name:
+                self.imeta_feature_name = f'imeta_{self.target_feature}'
+        except:
+            self.imeta_feature_name = f'imeta_{self.target_feature}'
         imeta_classes = xbt_ds.xbt_df.apply(imeta_classification, axis=1)
         imeta_df = pandas.DataFrame.from_dict({
             'id': xbt_ds.xbt_df['id'],
-            'instrument': imeta_classes.apply(lambda t1: f'XBT: {t1[0]} ({t1[1]})'),
-            'model': imeta_classes.apply(lambda t1: t1[0]),
-            'manufacturer': imeta_classes.apply(lambda t1: t1[1]),
+            self.imeta_feature_name: imeta_classes.apply(lambda t1: f'XBT: {t1[0]} ({t1[1]})'),
         })
         return imeta_df
 
@@ -437,13 +453,19 @@ class ClassificationExperiment(abc.ABC):
         }
         return metrics_df, metrics_full
 
-    def generate_prediction(self, clf, feature_name):
+    def generate_predictable_subset(self):
         if self.xbt_predictable is None:
-            # checker functions check each element of the profile metadata that could be a problem. The checkers are
-            # constructed from the labelled data subset.
-            checkers_labelled = {f1: c1 for f1, c1 in self.xbt_labelled.get_checkers().items() if
+            checkers_labelled = {f1: c1 for f1, c1 in
+                                 self.xbt_labelled.get_checkers().items() if
                                  f1 in self.input_features}
-            self.xbt_predictable = self.dataset.filter_predictable(checkers_labelled)
+
+            self.xbt_predictable = self.dataset.filter_predictable(
+                checkers_labelled)
+            self.xbt_predictable._feature_encoders = self.xbt_labelled._feature_encoders
+            self.xbt_predictable._target_encoders = self.xbt_labelled._target_encoders
+
+    def generate_prediction(self, clf, feature_name):
+        self.generate_predictable_subset()
 
         # generate classification for predictable profiles
         res_ml1 = clf.predict(self.xbt_predictable.filter_features(self.input_features).get_ml_dataset()[0])
@@ -563,7 +585,7 @@ class ClassificationExperiment(abc.ABC):
         vote_count_working /= float(len(res_ens_working.keys()))
         vote_count_unseen /= float(len(res_ens_working.keys()))
 
-        max_prob_feature_name = f'{self.target_feature}_max_prob'
+        max_prob_feature_name = MAX_PROB_FEATURE_NAME.format(target={self.target_feature})
         res_working_ensemble = vote_count_working.argmax(axis=1)
         instr_res_working_ensemble = self.xbt_labelled._feature_encoders[self.target_feature].inverse_transform(
             res_working_ensemble)
@@ -901,8 +923,31 @@ class EnsembleExperiment(ClassificationExperiment):
         self.load_dataset()
         self.setup_metrics()
 
+        # generate the subset of of the dataset for which we will be able
+        # to apply the trained classifiers. The profiles where we can't use
+        # the classifier is where a value of a categorical inputs
+        # (primarily country), that is present in the unlabelled data is not
+        # present in the labelled data, and so the classifier doesn't know
+        # what to do with it.
+        self.generate_predictable_subset()
+
+        # calculate imeta for the dataset
+        self.dataset.xbt_df = pandas.merge(
+            self.dataset.xbt_df,
+            self.generate_imeta(self.dataset),
+            on='id',
+        )
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
+
+        self.xbt_labelled.xbt_df = pandas.merge(
+            self.xbt_labelled.xbt_df,
+            self.generate_imeta(self.xbt_labelled),
+            on='id',
+        )
+        self.xbt_labelled._feature_encoders.update(
+            {f'imeta_{self.target_feature}': self.xbt_labelled._feature_encoders[
+                self.target_feature]})
 
         # get train/test/unseen sets
         print('generating splits')
@@ -917,105 +962,99 @@ class EnsembleExperiment(ClassificationExperiment):
         print(f'{duration1:.3f} seconds since start.')
         print('generating probabilities for evaluation.')
 
-        probs_test_instrument_df, max_prob_ensemble, instr_predictions_test = self.generate_ensemble_predictions(self.xbt_test)
+        ensemble_output_test = self.generate_ensemble_predictions(self.xbt_test)
+
+        self.xbt_test.xbt_df = pandas.merge(
+            self.xbt_test.xbt_df,
+            ensemble_output_test,
+            on='id',
+        )
+
+        self.xbt_test._feature_encoders.update(
+            {col_name: self.xbt_test._feature_encoders[self.target_feature]
+            for col_name in ensemble_output_test.columns if 'res' in col_name}
+        )
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating global metrics.')
+        self.calculate_global_metrics(self.xbt_test)
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating per year metrics.')
+        self. calculate_annual_metrics(self.xbt_test)
+
+        duration1 = time.time() - start1
+        print(f'{duration1:.3f} seconds since start.')
+        print('generating per class metrics.')
+        self.calculate_per_class_metrics(self.xbt_test)
+
+        pred_df = self.generate_ensemble_predictions(self.xbt_predictable)
+        self.output_quality_flag_name = OUTPUT_CQ_FLAG.format(
+            var_name=self.target_feature)
+        self.best_data_feature_name = f'res_{self.target_feature}_best_data'
+        pred_df = pandas.merge(
+            pred_df,
+            pandas.DataFrame({
+                'id': self.xbt_labelled['id'],
+                self.output_quality_flag_name: [OUTPUT_CQ_INPUT] * self.xbt_labelled.shape[0],
+                self.best_data_feature_name: self.xbt_labelled[self.target_feature],
+             }),
+            on='id',
+            how='outer')
+        ml_output_pred_indices = pred_df[pred_df[self.output_quality_flag_name].isna()].index
+        pred_df.loc[ml_output_pred_indices, self.output_quality_flag_name] = OUTPUT_CQ_ML
+        import pdb
+        pdb.set_trace()
+        pred_df.loc[ ml_output_pred_indices, self.best_data_feature_name,] = pred_df.loc[ml_output_pred_indices,self.max_prob_feature_name]
+
+        # set the na in quality flag to ml
+        # create a instrument_merged column in predictable, where values are imeta from labelled
+        # for na values in merged, used the max prob
+        # we will then merge the predictable outputs in the full dataset
+        # where result columns are na in full dataset, use imeta
+        # set qality flag to imeta for na in full dataset
+        # for probabilities, set the value of the imeta result probabiliuty column to be 1, the rest to zero
+
+        probs_column_names = [c1 for c1 in pred_df.columns
+                              if 'probability' in c1]
+
+        results_column_names = [c1 for c1 in pred_df.columns
+                                if 'res' in c1]
+        missing_data_indices = self.dataset.xbt_df[self.dataset.xbt_df.is_predictable == 0].index
+
+        self.dataset.xbt_df = pandas.merge(
+            self.dataset.xbt_df,
+            pred_df,
+            on='id',
+            how='outer')
+
+        #use 0.0 for missing probabilities
+        for col1 in probs_column_names:
+            self.dataset.xbt_df.loc[missing_data_indices, col1] = 0.0
+
+        # fill in imeta for missing data
+        for col1 in results_column_names:
+            self.dataset.xbt_df.loc[missing_data_indices, col1] = self.dataset.xbt_df.loc[missing_data_indices, self.imeta_feature_name]
+
         import pdb
         pdb.set_trace()
 
-        self.calculate_global_metrics()
-
-        self. calculate_annual_metrics()
-
-        self.calculate_per_class_metrics()
-
-        #TODO: add imeta generation in the new way
-        #TODO: create metric subset calc version to use a field, and use on imeta and max prob
-        #TODO: write out classifiers
-        #TODO: write out metrics
-        #TODO: calculate predictions for all data
-        #TODO: create consolidated by using using existing data and max prob for unlabelled
-        #TODO: where unlabelled can't be labelled, use imeta
-        #TODO: write out predictions]
-
-        #TODO: create an alternative experiment  with reaampling classifiers
-        #TODO: create an alternative experiment with k-fold and resampling
-
-        #TODO: rerun decision tree with and without country
-
-
-        (df_ens_working,
-         df_ens_unseen,
-         metrics_df_ens,
-         ens_scores_list) = self._evaluate_vote_probs(xbt_ens_working,
-                                                      xbt_ens_unseen,
-                                                      scores,
-                                                      )
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print('calculating metrics')
-        metrics_list = {}
-        scores_list = ens_scores_list
-        for split_num, estimator in self.classifiers.items():
-            xbt_train = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='exclude')
-            xbt_test = xbt_ens_working.filter_obs({UNSEEN_FOLD_NAME: split_num}, mode='include')
-            train_metrics, train_scores = self.generate_metrics(estimator, xbt_train, 'train_{0}'.format(split_num),
-                                                                'train')
-            test_metrics, test_scores = self.generate_metrics(estimator, xbt_test, 'test_{0}'.format(split_num), 'test')
-            unseen_metrics, unseen_scores = self.generate_metrics(estimator, xbt_ens_unseen,
-                                                                  'unseen_{0}'.format(split_num), 'unseen')
-            metrics_list[split_num] = pandas.merge(train_metrics, test_metrics, on='year')
-            scores_list += [train_scores, test_scores, unseen_scores]
-
-        self.score_table = pandas.DataFrame.from_records(scores_list)
-        print('overall scores for trained classifiers:')
-        print(self.score_table)
-
-        metrics_df_merge = None
-        for label1, metrics1 in metrics_list.items():
-            if metrics_df_merge is None:
-                metrics_df_merge = metrics1
-            else:
-                metrics_df_merge = pandas.merge(metrics_df_merge, metrics1, on='year')
-        metrics_df_merge = pandas.merge(metrics_df_merge, metrics_df_ens, on='year')
-        self.results = metrics_df_merge
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
         if write_results:
-            out_name = self.experiment_name + '_' + self._exp_datestamp
-            self.metrics_out_path = os.path.join(self.exp_output_dir,
-                                                 RESULT_FNAME_TEMPLATE.format(name=out_name))
-            self.results.to_csv(self.metrics_out_path)
-            self.scores_out_path = os.path.join(self.exp_output_dir,
-                                                SCORE_FNAME_TEMPLATE.format(name=out_name))
-            self.score_table.to_csv(self.scores_out_path)
-        else:
-            self.metrics_out_path = None
-            self.scores_out_path = None
+            for split_name, split_results in self.results.items():
+                for cat_name, cat_results in split_results.items():
+                    out_name = f'{self.experiment_name}_{split_name}_' \
+                               f'{cat_name}_{self._exp_datestamp}'
+                    metrics_out_path = os.path.join(
+                        self.exp_output_dir,
+                        RESULT_FNAME_TEMPLATE.format(
+                            name=out_name))
+                    cat_results.to_csv(metrics_out_path)
 
-        # generate imeta algorithm results for the whole dataset
-        imeta_df = self.generate_imeta(self.dataset)
-        imeta_df = imeta_df.rename(
-            columns={'instrument': 'imeta_instrument',
-                     'model': 'imeta_model',
-                     'manufacturer': 'imeta_manufacturer',
-                     })
-        self.dataset.xbt_df = self.dataset.xbt_df.merge(imeta_df[['id', 'imeta_{0}'.format(self.target_feature)]])
-
-        duration1 = time.time() - start1
-        print(f'{duration1:.3f} seconds since start.')
-        print(' run prediction on full dataset')
-        result_feature_names = []
-        for split_num, estimator in self.classifiers.items():
-            res_name = RESULT_FEATURE_TEMPLATE.format(
-                target=self.target_feature,
-                clf=self.classifier_name,
-                split_num=split_num)
-            result_feature_names += [res_name]
-            self.generate_prediction(estimator, res_name)
-
-        # generate vote count probabilities from the different trained classifiers
-        self.generate_vote_probabilities(result_feature_names)
+        if export_classifiers:
+            print('exporting classifier objects through pickle')
+            self.export_classifiers()
 
         duration1 = time.time() - start1
         print(f'{duration1:.3f} seconds since start.')
@@ -1032,9 +1071,6 @@ class EnsembleExperiment(ClassificationExperiment):
         else:
             self.predictions_out_path_list = []
 
-        if export_classifiers:
-            print('exporting classifier objects through pickle')
-            self.export_classifiers()
 
         return (self.results, self.classifiers)
 
@@ -1081,52 +1117,63 @@ class EnsembleExperiment(ClassificationExperiment):
                         self.input_features).get_ml_dataset()[0]))
             for ix1, clf1 in self.classifiers.items()}
         d1['id'] = xbt_subset['id']
-        instr_predictions_test = pandas.DataFrame(d1)
 
         ens_res_features = [f'{self.target_feature}_res_{ix1}' for
                                ix1, clf1 in self.classifiers.items()]
 
-        # xbt_subset.xbt_df = pandas.DataFrame.merge(xbt_subset.xbt_df,
-        #                                          instr_predictions_test_cv,
-        #                                          on='id')
-
-        probs_test_instrument = functools.reduce(
+        probs_array = functools.reduce(
             lambda x, y: x + y,
             [self.xbt_labelled._target_encoders[self.target_feature].transform(
-                instr_predictions_test[[pred1]])
-             for pred1 in instr_predictions_test.columns
-             if 'res' in pred1]) / len(instr_predictions_test.columns)
-        probs_test_instrument_df = pandas.DataFrame(
-            {col_name: probs_test_instrument[:, col_ix1]
-             for col_ix1, col_name in enumerate(
-                self.xbt_labelled._target_encoders[self.target_feature].categories_[
-                    0])})
+                pred1.reshape(-1,1))
+             for col_name, pred1 in d1.items()
+             if 'res' in col_name]) / len(self.classifiers)
 
-        max_prob_ensemble = probs_test_instrument_df.idxmax(
-            axis='columns')
+        probs_dict = {col_name : probs_array[:, col_ix1] for col_ix1, col_name
+                      in enumerate(self.xbt_labelled._target_encoders[
+                                       self.target_feature].categories_[0])}
+        d1.update(
+            {f'probability_{self.target_feature}_{k1}':v1 for k1,v1 in probs_dict.items()}
+        )
+        probs_df = pandas.DataFrame(probs_dict)
 
-        return probs_test_instrument_df, max_prob_ensemble, instr_predictions_test
+        max_prob_ensemble = probs_df.idxmax(axis='columns')
+        self.max_prob_feature_name = MAX_PROB_FEATURE_NAME.format(target=self.target_feature)
+        d1[self.max_prob_feature_name] = max_prob_ensemble
 
-    def calculate_global_metrics(self):
+        ensemble_outputs = pandas.DataFrame({k1: list(v1) for k1,v1 in d1.items()})
+        return ensemble_outputs
+
+    def calculate_global_metrics(self, xbt_subset):
         metrics_test_ens = pandas.DataFrame(
             {f'{metric_name}_instr_ens': [
-                self.calc_metric_subset(self.xbt_test,
+                self.predict_and_calc_metric_subset(xbt_subset,
                                         clf1,
                                         None,
                                         **metric1
                                         ) for res_ix1, clf1 in
-                self.classifiers.items()]
+                self.classifiers.items()] + [
+                self.calc_column_metric_subset(xbt_subset,
+                                               self.max_prob_feature_name,
+                                               None,
+                                               **metric1
+                                               )
+            ] + [
+                self.calc_column_metric_subset(xbt_subset,
+                                               f'imeta_{self.target_feature}',
+                                               None,
+                                               **metric1
+                                               )
+            ]
+
                 for metric_name, metric1 in self.metrics_defs_dict.items()
             })
-        metrics_test_ens['classifier'] = [
-            f'cv_{res_ix1}' for res_ix1, clf1 in self.classifiers.items()]
+        metrics_test_ens['classifier'] = [f'clf_{res_ix1}' for res_ix1, clf1 in self.classifiers.items()] + ['max_prob', 'imeta']
+        self.results[TEST_VAR_NAME][METRIC_SET_ALL] = metrics_test_ens
 
-        self.metrics[TEST_VAR_NAME][METRIC_SET_ALL] = metrics_test_ens
-
-    def calculate_per_class_metrics(self):
+    def calculate_per_class_metrics(self, xbt_subset):
         metrics_raw_dict = {
             f'{metric_name}_instr_{res_ix1}': [
-                self.calc_metric_subset(self.xbt_test,
+                self.predict_and_calc_metric_subset(xbt_subset,
                                         clf1,
                                         {self.target_feature: fn1},
                                         **metric1
@@ -1135,6 +1182,28 @@ class EnsembleExperiment(ClassificationExperiment):
             for metric_name, metric1 in self.metrics_defs_dict.items()
             for res_ix1, clf1 in self.classifiers.items()
             }
+        metrics_raw_dict.update({
+            f'{metric_name}_instr_max_prob': [
+                self.calc_column_metric_subset(xbt_subset,
+                                               self.max_prob_feature_name,
+                                               {self.target_feature: fn1},
+                                               **metric1,
+                                               )
+                for fn1 in self.instrument_list]
+            for metric_name, metric1 in self.metrics_defs_dict.items()
+            })
+        metrics_raw_dict.update({
+            f'{metric_name}_instr_max_prob': [
+                self.calc_column_metric_subset(xbt_subset,
+                                               f'imeta_{self.target_feature}',
+                                               {self.target_feature: fn1},
+                                               **metric1,
+                                               )
+                for fn1 in self.instrument_list]
+            for metric_name, metric1 in self.metrics_defs_dict.items()
+            })
+
+
         metrics_raw_dict['num_profiles'] = [
             self.xbt_labelled.filter_obs({self.target_feature: fn1}).shape[0]
             for fn1 in self.instrument_list]
@@ -1149,22 +1218,42 @@ class EnsembleExperiment(ClassificationExperiment):
             metrics_per_class_df[
                 [c1 for c1 in metrics_per_class_df.columns if
                  metric_name in c1]].mean(axis='columns')
-        self.metrics[TEST_VAR_NAME][METRIC_SET_PER_CLASS] = metrics_per_class_df
+        self.results[TEST_VAR_NAME][METRIC_SET_PER_CLASS] = metrics_per_class_df
 
-    def calculate_annual_metrics(self):
+    def calculate_annual_metrics(self, xbt_subset):
         metrics_annual_raw_dict = {
-            f'{metric_name}_instr_{res_ix1}': [self.calc_metric_subset(self.xbt_test,
+            f'{metric_name}_instr_{res_ix1}': [self.predict_and_calc_metric_subset(xbt_subset,
                                                                   clf1,
-                                                                  {
-                                                                      'year': year1},
+                                                                  {'year': year1},
                                                                   **metric1
-                                                                  ) for
-                                               year1 in range(*self.year_range)]
+                                                                  )
+                                               for year1 in range(*self.year_range)]
             for metric_name, metric1 in self.metrics_defs_dict.items()
             for res_ix1, clf1 in self.classifiers.items()
             }
+
+        metrics_annual_raw_dict.update({
+            f'{metric_name}_instr_max_prob': [
+                self.calc_column_metric_subset(xbt_subset,
+                                               self.max_prob_feature_name,
+                                               {'year': year1},
+                                               **metric1,
+                                               )
+                for year1 in range(*self.year_range)]
+            for metric_name, metric1 in self.metrics_defs_dict.items()
+            })
+        metrics_annual_raw_dict.update({
+            f'{metric_name}_instr_max_prob': [
+                self.calc_column_metric_subset(xbt_subset,
+                                               f'imeta_{self.target_feature}',
+                                               {'year': year1},
+                                               **metric1,
+                                               )
+                for year1 in range(*self.year_range)]
+            for metric_name, metric1 in self.metrics_defs_dict.items()
+            })
         metrics_annual_raw_dict['num_profiles'] = [
-            self.xbt_labelled.filter_obs({'year': year1}).shape[0] for year1 in
+            xbt_subset.filter_obs({'year': year1}).shape[0] for year1 in
             range(*self.year_range)]
         metrics_annual_raw_dict['year'] = [year1 for year1 in
                                            range(*self.year_range)]
@@ -1175,8 +1264,7 @@ class EnsembleExperiment(ClassificationExperiment):
             metrics_annual_df[
                 [c1 for c1 in metrics_annual_df.columns if
                  metric_name in c1]].mean(axis='columns')
-        self.metrics[TEST_VAR_NAME][METRIC_SET_PER_YEAR] = metrics_annual_df
-
+        self.results[TEST_VAR_NAME][METRIC_SET_PER_YEAR] = metrics_annual_df
 
 
 class CVExperiment(EnsembleExperiment):
