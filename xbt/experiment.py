@@ -32,6 +32,7 @@ PARAM_FNAME_TEMPLATE = 'xbt_hyperparams_{name}.json'
 OUTPUT_FNAME_TEMPLATE = 'xbt_classifications_{exp_name}_{subset}.csv'
 CLASSIFIER_EXPORT_FNAME_TEMPLATE = 'xbt_classifier_{exp}_{split_num}.joblib'
 
+CLF_KEY_TEMPLATE = 'clf_{ens_type}_{index}'
 UNSEEN_FOLD_NAME = 'unseen_fold'
 RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
 PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat}'
@@ -139,8 +140,8 @@ class ClassificationExperiment(abc.ABC):
         create a XBTDataset
         only load the specified input and target features, taken from the parameters JSON file
         """
-        # the actual construction is put into a sperate function, so child 
-        # classes for different platforms can handle any platform specific stuff 
+        # the actual construction is put into a sperate function, so child
+        # classes for different platforms can handle any platform specific stuff
         self._construct_dataset_obj()
 
         # get the year range from the data once it has loaded if it was not specified previously
@@ -705,6 +706,8 @@ class SingleExperiment(ClassificationExperiment):
 
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.exp_type = 'Single classifier experiment'
+
 
     def _get_classifier(self):
         clf = self.classifier_class(**self._default_classifier_opts)
@@ -714,6 +717,7 @@ class SingleExperiment(ClassificationExperiment):
                        export_classifiers=True):
         """
         """
+        print(f'Running {self.exp_type} on config {self.json_fname}')
         self._check_output_dir()
         self._exp_datestamp = xbt.common.generate_datestamp()
 
@@ -813,6 +817,8 @@ class ImportanceExperiment(ClassificationExperiment):
 
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.exp_type = 'Feature importance experiment'
+
 
     def _get_classifier(self):
         clf = self.classifier_class(**self._default_classifier_opts)
@@ -822,6 +828,7 @@ class ImportanceExperiment(ClassificationExperiment):
                        export_classifiers=True):
         """
         """
+        print(f'Running {self.exp_type} on config {self.json_fname}')
         self._check_output_dir()
         self._exp_datestamp = xbt.common.generate_datestamp()
 
@@ -874,6 +881,10 @@ class ImportanceExperiment(ClassificationExperiment):
         return (self.results, self.classifiers)
 
 class HptExperiment(SingleExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.exp_type = 'Hyper-parameter tuning experiment'
+
     def _get_classifier(self):
         classifier_obj = self.classifier_class(**self._default_classifier_opts)
         self.cv_splitter = sklearn.model_selection.KFold(
@@ -908,7 +919,8 @@ class HptExperiment(SingleExperiment):
 
 
 class EnsembleExperiment(ClassificationExperiment):
-
+    """
+    """
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
         self.test_fold_name = 'test_fold'
@@ -917,6 +929,7 @@ class EnsembleExperiment(ClassificationExperiment):
     def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
+        print(f'Running {self.exp_type} on config {self.json_fname}')
         self._check_output_dir()
         self._exp_datestamp = xbt.common.generate_datestamp()
 
@@ -1235,6 +1248,7 @@ class CVExperiment(EnsembleExperiment):
 
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.exp_type = 'Cross validation experiment'
 
     def train_classifiers(self):
         self.xbt_working.generate_folds_by_feature('cruise_number',
@@ -1266,7 +1280,7 @@ class CVExperiment(EnsembleExperiment):
             n_jobs=-1,
         )
 
-        self.classifiers = {ix1: clf1
+        self.classifiers = {CLF_KEY_TEMPLATE.format(ens_type='cv', index=ix1): clf1
                             for ix1, clf1 in enumerate(scores['estimator'])}
 
 
@@ -1274,6 +1288,7 @@ class CvhptExperiment(EnsembleExperiment):
 
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.exp_type = 'Cross-validation experiment with hyperparameter tuning'
 
     def train_classifiers(self):
         self.xbt_working.generate_folds_by_feature('cruise_number',
@@ -1325,6 +1340,7 @@ class ResamplingExperiment(EnsembleExperiment):
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
         self.num_resamples_per_class = 10000
+        self.exp_type = 'Resampling experiment'
 
     def train_classifiers(self):
         self.num_resamples_per_class = int(self.xbt_labelled.shape[0] / len(self.instrument_list))
@@ -1344,7 +1360,7 @@ class ResamplingExperiment(EnsembleExperiment):
                      xbt_resampled_train_all.filter_features(
                          [self.target_feature]).get_ml_dataset()[0],
                      )
-            self.classifiers[resample_index] = clf1
+            self.classifiers[CLF_KEY_TEMPLATE.format(ens_type='resample', index=resample_index)] = clf1
 
     def get_resampled(self, xbt_subset1, resample_index, random_state):
         resampled_profiles_list = [
@@ -1369,15 +1385,54 @@ class ResamplingExperiment(EnsembleExperiment):
         xbt_resampled_validation_all = self.xbt_working.filter_obs({resample_feature_name: False})
         return (xbt_resampled_train_all, xbt_resampled_validation_all)
 
+class MetaEnsembleExperiment(EnsembleExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.num_resamples_per_class = 10000
+        self.resample_exp = ResamplingExperiment(json_descriptor=json_descriptor,
+                                                 data_dir=data_dir,
+                                                 output_dir=output_dir,
+                                                 output_split=output_split,
+                                                 do_preproc_extract=do_preproc_extract,
+                                                 )
+
+        self.kfold_exp = CVExperiment(json_descriptor=json_descriptor,
+                                      data_dir=data_dir,
+                                      output_dir=output_dir,
+                                      output_split=output_split,
+                                      do_preproc_extract=do_preproc_extract,
+                                      )
+        self.exp_type = 'Meta-ensemble experiment'
+
+
+    def train_classifiers(self):
+        self.resample_exp.xbt_labelled = self.xbt_labelled
+        self.resample_exp.xbt_working = self.xbt_working
+        self.resample_exp.instrument_list = self.instrument_list
+        self.resample_exp.train_classifiers()
+
+        self.kfold_exp.xbt_working = self.xbt_working
+        self.kfold_exp.xbt_labelled = self.xbt_labelled
+        self.kfold_exp.instrument_list = self.instrument_list
+        self.kfold_exp.train_classifiers()
+
+        self.classifiers = {}
+        self.classifiers.update(self.kfold_exp.classifiers)
+        self.classifiers.update(self.resample_exp.classifiers)
+
+
+
 
 class InferenceExperiment(ClassificationExperiment):
 
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.exp_type = 'Inference experiment'
 
     def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
+        print(f'Running {self.exp_type} on config {self.json_fname}')
         self._check_output_dir()
         self._exp_datestamp = xbt.common.generate_datestamp()
 

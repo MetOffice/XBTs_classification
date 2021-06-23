@@ -129,6 +129,28 @@ def run_resampling_experiment():
 
     return return_code
 
+@experiment_timer
+def run_metaensemble_experiment():
+    """
+    """
+    exp_args = get_arguments(
+        'Run training, inference and evaluation, training on resampled data with balanced classes.'
+    )
+    return_code = 0
+    xbt_exp = experiment.MetaEnsembleExperiment(
+        exp_args.json_experiment,
+        exp_args.input_path,
+        exp_args.output_path,
+        output_split=exp_args.output_file_split,
+        do_preproc_extract=exp_args.do_preproc_extract,
+    )
+    try:
+        xbt_exp.run_experiment()
+    except RuntimeError as e1:
+        print(f'Runtime error:\n {str(e1)}')
+        return_code = 1
+
+    return return_code
 
 
 @experiment_timer
