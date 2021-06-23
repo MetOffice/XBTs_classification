@@ -1,4 +1,5 @@
 import ast
+import datetime
 import tempfile
 import importlib
 import joblib
@@ -35,6 +36,7 @@ UNSEEN_FOLD_NAME = 'unseen_fold'
 RESULT_FEATURE_TEMPLATE = '{target}_res_{clf}_split{split_num}'
 PROB_CAT_TEMPLATE = '{target}_{clf}_probability_{cat}'
 MAX_PROB_FEATURE_NAME = 'res_{target}_max_prob'
+RESAMPLE_FEATURE_TEMPLATE = 'resample_train_{resample_index}'
 
 TEST_VAR_NAME = 'test'
 TEST_PART_NAME = 'test_part'
@@ -150,10 +152,10 @@ class ClassificationExperiment(abc.ABC):
         # initialise the feature encoders on the labelled data
         _ = self.xbt_labelled.get_ml_dataset(return_data=False)
         _ = self.xbt_labelled.filter_features(xbt.dataset.TARGET_FEATURES).encode_target(return_data=False)
-
-    def setup_metrics(self):
         self.instrument_list = list(
             self.xbt_labelled._feature_encoders[self.target_feature].classes_)
+
+    def setup_metrics(self):
 
         self.do_avg_args_dict = {'labels': list(range(0, len(self.instrument_list))),
                                  'average': 'weighted'}
@@ -910,9 +912,9 @@ class EnsembleExperiment(ClassificationExperiment):
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
         self.test_fold_name = 'test_fold'
+        self.classifiers = None
 
-    def _do_ensemble_experiment(self, classifier_obj, write_results=True, write_predictions=True,
-                                export_classifiers=True):
+    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
         """
         """
         self._check_output_dir()
@@ -962,6 +964,7 @@ class EnsembleExperiment(ClassificationExperiment):
         print(f'{duration1:.3f} seconds since start.')
         print('generating probabilities for evaluation.')
 
+        # generate ensemble outputs for calculating metrics on test set
         ensemble_output_test = self.generate_ensemble_predictions(self.xbt_test)
 
         self.xbt_test.xbt_df = pandas.merge(
@@ -1005,17 +1008,7 @@ class EnsembleExperiment(ClassificationExperiment):
             how='outer')
         ml_output_pred_indices = pred_df[pred_df[self.output_quality_flag_name].isna()].index
         pred_df.loc[ml_output_pred_indices, self.output_quality_flag_name] = OUTPUT_CQ_ML
-        import pdb
-        pdb.set_trace()
         pred_df.loc[ ml_output_pred_indices, self.best_data_feature_name,] = pred_df.loc[ml_output_pred_indices,self.max_prob_feature_name]
-
-        # set the na in quality flag to ml
-        # create a instrument_merged column in predictable, where values are imeta from labelled
-        # for na values in merged, used the max prob
-        # we will then merge the predictable outputs in the full dataset
-        # where result columns are na in full dataset, use imeta
-        # set qality flag to imeta for na in full dataset
-        # for probabilities, set the value of the imeta result probabiliuty column to be 1, the rest to zero
 
         probs_column_names = [c1 for c1 in pred_df.columns
                               if 'probability' in c1]
@@ -1037,9 +1030,6 @@ class EnsembleExperiment(ClassificationExperiment):
         # fill in imeta for missing data
         for col1 in results_column_names:
             self.dataset.xbt_df.loc[missing_data_indices, col1] = self.dataset.xbt_df.loc[missing_data_indices, self.imeta_feature_name]
-
-        import pdb
-        pdb.set_trace()
 
         if write_results:
             for split_name, split_results in self.results.items():
@@ -1075,38 +1065,9 @@ class EnsembleExperiment(ClassificationExperiment):
         return (self.results, self.classifiers)
 
     def train_classifiers(self):
-        self.xbt_working.generate_folds_by_feature('cruise_number',
-                                                   self.num_test_splits,
-                                                   self.test_fold_name)
-        cruise_numbers = list(self.xbt_working['cruise_number'].unique())
-
-        X_labelled = \
-        self.xbt_working.filter_features(self.input_features).get_ml_dataset()[
-            0]
-        y_labelled = self.xbt_working.filter_features(
-            [self.target_feature]).get_ml_dataset()[0]
-
-        group_cv1 = sklearn.model_selection.KFold(
-            n_splits=self.num_test_splits,
-            shuffle=True,
-            random_state=random.randint(
-                1, 2 ** 20))
-        clf_dt1 = self.classifier_class(**self._default_classifier_opts)
-
-        scores = sklearn.model_selection.cross_validate(
-            clf_dt1,
-            X_labelled, y_labelled,
-            groups=self.xbt_working[self.test_fold_name],
-            cv=group_cv1,
-            return_estimator=True,
-            return_train_score=True,
-            scoring=self._tuning_dict['cv_metrics'],
-            n_jobs=-1,
-        )
-
-        self.classifiers = {ix1: clf1
-                            for ix1, clf1 in enumerate(scores['estimator'])}
-
+        raise NotImplementedError('train_classifier - This method of the '
+                                  'abstract base class should be overloaded '
+                                  'by concrete class implementation.')
 
     def generate_ensemble_predictions(self, xbt_subset):
         d1 = {
@@ -1193,7 +1154,7 @@ class EnsembleExperiment(ClassificationExperiment):
             for metric_name, metric1 in self.metrics_defs_dict.items()
             })
         metrics_raw_dict.update({
-            f'{metric_name}_instr_max_prob': [
+            f'{metric_name}_instr_imeta': [
                 self.calc_column_metric_subset(xbt_subset,
                                                f'imeta_{self.target_feature}',
                                                {self.target_feature: fn1},
@@ -1231,8 +1192,7 @@ class EnsembleExperiment(ClassificationExperiment):
             for metric_name, metric1 in self.metrics_defs_dict.items()
             for res_ix1, clf1 in self.classifiers.items()
             }
-
-        metrics_annual_raw_dict.update({
+        max_prob_metrics = {
             f'{metric_name}_instr_max_prob': [
                 self.calc_column_metric_subset(xbt_subset,
                                                self.max_prob_feature_name,
@@ -1241,9 +1201,13 @@ class EnsembleExperiment(ClassificationExperiment):
                                                )
                 for year1 in range(*self.year_range)]
             for metric_name, metric1 in self.metrics_defs_dict.items()
-            })
+            }
+        metrics_annual_raw_dict.update(max_prob_metrics)
+
+        [self.calc_column_metric_subset(xbt_subset, self.max_prob_feature_name, {'year': year1}, **self.metrics_defs_dict['recall'],) for year1 in range(*self.year_range)]
+
         metrics_annual_raw_dict.update({
-            f'{metric_name}_instr_max_prob': [
+            f'{metric_name}_instr_imeta': [
                 self.calc_column_metric_subset(xbt_subset,
                                                f'imeta_{self.target_feature}',
                                                {'year': year1},
@@ -1272,24 +1236,64 @@ class CVExperiment(EnsembleExperiment):
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
 
-    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        print('using classifier opts:\n' + str(self._default_classifier_opts))
-        classifier_obj = self.classifier_class(**self._default_classifier_opts)
-        return self._do_ensemble_experiment(classifier_obj,
-                                            write_results,
-                                            write_predictions,
-                                            export_classifiers)
+    def train_classifiers(self):
+        self.xbt_working.generate_folds_by_feature('cruise_number',
+                                                   self.num_test_splits,
+                                                   self.test_fold_name)
+        cruise_numbers = list(self.xbt_working['cruise_number'].unique())
+
+        X_labelled = \
+            self.xbt_working.filter_features(self.input_features).get_ml_dataset()[
+                0]
+        y_labelled = self.xbt_working.filter_features(
+            [self.target_feature]).get_ml_dataset()[0]
+
+        group_cv1 = sklearn.model_selection.KFold(
+            n_splits=self.num_test_splits,
+            shuffle=True,
+            random_state=random.randint(
+                1, 2 ** 20))
+        clf_dt1 = self.classifier_class(**self._default_classifier_opts)
+
+        scores = sklearn.model_selection.cross_validate(
+            clf_dt1,
+            X_labelled, y_labelled,
+            groups=self.xbt_working[self.test_fold_name],
+            cv=group_cv1,
+            return_estimator=True,
+            return_train_score=True,
+            scoring=self._tuning_dict['cv_metrics'],
+            n_jobs=-1,
+        )
+
+        self.classifiers = {ix1: clf1
+                            for ix1, clf1 in enumerate(scores['estimator'])}
+
 
 class CvhptExperiment(EnsembleExperiment):
 
     def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
         super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
 
-    def run_experiment(self, write_results=True, write_predictions=True, export_classifiers=True):
-        # create objects for cross validation and hyperparameter tuning
-        # first set up objects for the inner cross validation, which run for each
-        # set of hyperparameters in the grid search.
-        self._cv_splitter = sklearn.model_selection.KFold(
+    def train_classifiers(self):
+        self.xbt_working.generate_folds_by_feature('cruise_number',
+                                                   self.num_test_splits,
+                                                   self.test_fold_name)
+        cruise_numbers = list(self.xbt_working['cruise_number'].unique())
+
+        X_labelled = \
+            self.xbt_working.filter_features(self.input_features).get_ml_dataset()[
+                0]
+        y_labelled = self.xbt_working.filter_features(
+            [self.target_feature]).get_ml_dataset()[0]
+
+        self.test_splitter = sklearn.model_selection.KFold(
+            n_splits=self.num_test_splits,
+            shuffle=True,
+            random_state=random.randint(
+                1, 2 ** 20))
+
+        self.train_splitter = sklearn.model_selection.KFold(
             n_splits=self.num_training_splits,
             shuffle=True,
             random_state=self._random_state,
@@ -1300,12 +1304,71 @@ class CvhptExperiment(EnsembleExperiment):
             classifier_obj,
             param_grid=self._tuning_dict['param_grid'],
             scoring=self._tuning_dict['scoring'],
-            cv=self._cv_splitter,
+            cv=self.train_splitter,
         )
-        return self._do_ensemble_experiment(grid_search_cv,
-                                            write_results,
-                                            write_predictions,
-                                            export_classifiers)
+
+        scores = sklearn.model_selection.cross_validate(
+            grid_search_cv,
+            X_labelled, y_labelled,
+            groups=self.xbt_working[self.test_fold_name],
+            cv=self.test_splitter,
+            return_estimator=True,
+            return_train_score=True,
+            scoring=self._tuning_dict['cv_metrics'],
+            n_jobs=-1,
+        )
+
+        self.classifiers = {ix1: clf1
+                            for ix1, clf1 in enumerate(scores['estimator'])}
+
+class ResamplingExperiment(EnsembleExperiment):
+    def __init__(self, json_descriptor, data_dir, output_dir, output_split, do_preproc_extract=False):
+        super().__init__(json_descriptor, data_dir, output_dir, output_split, do_preproc_extract)
+        self.num_resamples_per_class = 10000
+
+    def train_classifiers(self):
+        self.num_resamples_per_class = int(self.xbt_labelled.shape[0] / len(self.instrument_list))
+
+
+        self.classifiers = {}
+        for resample_index in range(1, 6):
+            xbt_resampled_train_all, xbt_resampled_validation_all = self.get_resampled(
+                self.xbt_working,
+                resample_index=resample_index,
+                random_state=int(
+                    (datetime.datetime.now().timestamp() * 1e5) % 1e5),
+            )
+            clf1 = self.classifier_class(**self._default_classifier_opts)
+            clf1.fit(xbt_resampled_train_all.filter_features(
+                self.input_features).get_ml_dataset()[0],
+                     xbt_resampled_train_all.filter_features(
+                         [self.target_feature]).get_ml_dataset()[0],
+                     )
+            self.classifiers[resample_index] = clf1
+
+    def get_resampled(self, xbt_subset1, resample_index, random_state):
+        resampled_profiles_list = [
+            xbt_subset1.filter_obs({self.target_feature: ins1}).xbt_df.sample(
+                self.num_resamples_per_class,
+                replace=True,
+                random_state=random_state,
+            )
+            for ins1 in self.instrument_list]
+        resampled_training_indices = list(set(itertools.chain.from_iterable([list(rp1.index) for rp1 in resampled_profiles_list])))
+        if resample_index is None:
+            resample_index = 0
+        resample_feature_name = RESAMPLE_FEATURE_TEMPLATE.format(resample_index=resample_index)
+        xbt_subset1.xbt_df[resample_feature_name] = self.xbt_working.xbt_df.index.isin(resampled_training_indices)
+        resampled_df = pandas.concat(
+            resampled_profiles_list,
+            ignore_index=True,
+        )
+        xbt_resampled_train_all = xbt.dataset.XbtDataset(self.data_dir, self.year_range, df=resampled_df)
+        xbt_resampled_train_all._feature_encoders = self.xbt_labelled._feature_encoders
+        xbt_resampled_train_all._arget_encoders = self.xbt_labelled._target_encoders
+        xbt_resampled_validation_all = self.xbt_working.filter_obs({resample_feature_name: False})
+        return (xbt_resampled_train_all, xbt_resampled_validation_all)
+
 
 class InferenceExperiment(ClassificationExperiment):
 
