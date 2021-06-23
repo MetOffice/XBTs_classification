@@ -40,47 +40,6 @@ def experiment_timer(exp_func):
     return run_experiment
 
 
-@experiment_timer
-def run_single_experiment():
-    """
-    """
-    exp_args = get_arguments(
-        'Run training, inference and evaluation on a single split.'
-    )
-    return_code = 0
-    xbt_exp = experiment.SingleExperiment(exp_args.json_experiment,
-                                          exp_args.input_path,
-                                          exp_args.output_path,
-                                          output_split=exp_args.output_file_split,
-                                          do_preproc_extract=exp_args.do_preproc_extract,
-                                          )
-    try:
-        xbt_exp.run_experiment()
-    except RuntimeError as e1:
-        print(f'Runtime error:\n {str(e1)}')
-        return_code = 1
-    return return_code
-
-@experiment_timer
-def run_importance_experiment():
-    """
-    """
-    exp_args = get_arguments(
-        'Run training and feature importance on a single split.'
-    )
-    return_code = 0
-    xbt_exp = experiment.ImportanceExperiment(exp_args.json_experiment,
-                                              exp_args.input_path,
-                                              exp_args.output_path,
-                                              output_split=exp_args.output_file_split,
-                                              do_preproc_extract=exp_args.do_preproc_extract,
-                                              )
-    try:
-        xbt_exp.run_experiment()
-    except RuntimeError as e1:
-        print(f'Runtime error:\n {str(e1)}')
-        return_code = 1
-    return return_code
 
 
 @experiment_timer
@@ -98,6 +57,52 @@ def run_cv_experiment():
                                       output_split=exp_args.output_file_split,
                                       do_preproc_extract=exp_args.do_preproc_extract,
                                       )
+    try:
+        xbt_exp.run_experiment()
+    except RuntimeError as e1:
+        print(f'Runtime error:\n {str(e1)}')
+        return_code = 1
+
+    return return_code
+
+@experiment_timer
+def run_resampling_experiment():
+    """
+    """
+    exp_args = get_arguments(
+        'Run training, inference and evaluation, training on resampled data with balanced classes.'
+    )
+    return_code = 0
+    xbt_exp = experiment.ResamplingExperiment(
+        exp_args.json_experiment,
+        exp_args.input_path,
+        exp_args.output_path,
+        output_split=exp_args.output_file_split,
+        do_preproc_extract=exp_args.do_preproc_extract,
+    )
+    try:
+        xbt_exp.run_experiment()
+    except RuntimeError as e1:
+        print(f'Runtime error:\n {str(e1)}')
+        return_code = 1
+
+    return return_code
+
+@experiment_timer
+def run_metaensemble_experiment():
+    """
+    """
+    exp_args = get_arguments(
+        'Run training, inference and evaluation, training on resampled data with balanced classes.'
+    )
+    return_code = 0
+    xbt_exp = experiment.MetaEnsembleExperiment(
+        exp_args.json_experiment,
+        exp_args.input_path,
+        exp_args.output_path,
+        output_split=exp_args.output_file_split,
+        do_preproc_extract=exp_args.do_preproc_extract,
+    )
     try:
         xbt_exp.run_experiment()
     except RuntimeError as e1:
@@ -132,31 +137,6 @@ def run_cvhpt_experiment():
 
     return return_code
 
-
-@experiment_timer
-def run_hpt_experiment():
-    """
-    """
-    exp_args = get_arguments(
-        'Run training, inference and evaluation on multiple splits,'
-        'with hypterparameter tuning for each split and inner '
-        'cross-validation on each set of parameters.'
-    )
-    return_code = 0
-    xbt_exp = experiment.HptExperiment(exp_args.json_experiment,
-                                       exp_args.input_path,
-                                       exp_args.output_path,
-                                       output_split=exp_args.output_file_split,
-                                       do_preproc_extract=exp_args.do_preproc_extract,
-                                       )
-
-    try:
-        xbt_exp.run_experiment()
-    except RuntimeError as e1:
-        print(f'Runtime error:\n {str(e1)}')
-        return_code = 1
-
-    return return_code
 
 @experiment_timer
 def run_inference():

@@ -8,7 +8,7 @@
 "split": {
           "unseen_feature": "cruise_number",
           "balance_features": ["year", "instrument"],
-          "num_unseen_splits": 5,
+          "num_test_splits": 5,
           "num_training_splits": 5
         },
  "experiment_name": "decisionTree_countryLatLon",

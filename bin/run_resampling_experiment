@@ -3,9 +3,7 @@
 # add repository to python path
 import pathlib
 import sys
-
 root_repo_dir = pathlib.Path(__file__).absolute().parent.parent
-import os
 sys.path = [str(root_repo_dir)] + sys.path
 
 import warnings
@@ -13,6 +11,6 @@ warnings.filterwarnings('ignore')
 
 from xbt import classification
 
-return_code = classification.run_importance_experiment()
+return_code = classification.run_resampling_experiment()
 
 sys.exit(return_code)
