@@ -1,0 +1,14 @@
+name: xbt_env_sklearn
+channels:
+  - defaults
+dependencies:
+  - iris=3.0
+  - scikit-learn=0.24
+  - pandas=1.3
+  - python=3.8
+  - imbalanced-learn=0.8
+  - jupyterlab
+  - ipykernel
+  - ipywidgets
+prefix: /root/my-conda-envs/xbt_env_sklearn
+
