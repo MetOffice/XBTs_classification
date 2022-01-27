@@ -1,6 +1,7 @@
 name: xbt_env_sklearn
 channels:
   - defaults
+  - conda-forge
 dependencies:
   - iris=3.0
   - scikit-learn=0.24
@@ -8,7 +9,7 @@ dependencies:
   - python=3.8
   - imbalanced-learn=0.8
   - jupyterlab
+  - dask-labextension
   - ipykernel
   - ipywidgets
-prefix: /root/my-conda-envs/xbt_env_sklearn
 
